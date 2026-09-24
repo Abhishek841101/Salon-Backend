@@ -138,7 +138,22 @@ const billSchema = new mongoose.Schema(
       enum: ["Paid", "Pending"],
       default: "Paid",
     },
+// ========================================
+// STYLIST / STAFF
+// ========================================
 
+stylist: {
+  type: mongoose.Schema.Types.ObjectId,
+  ref: "Stylist",
+  required: true,
+  index: true,
+},
+
+stylistName: {
+  type: String,
+  required: true,
+  trim: true,
+},
     // ========================================
     // NOTES
     // ========================================
