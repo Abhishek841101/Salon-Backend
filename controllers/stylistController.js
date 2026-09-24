@@ -1,4 +1,7 @@
+import mongoose from "mongoose";
 import Stylist from "../models/Stylist.js";
+import Booking from "../models/Booking.js";
+import Bill from "../models/Bill.js";
 
 // ======================================================
 // CREATE STYLIST
@@ -16,7 +19,6 @@ export const createStylist = async (req, res) => {
       status,
     } = req.body;
 
-    // Required fields
     if (!name || !phone) {
       return res.status(400).json({
         success: false,
@@ -24,7 +26,6 @@ export const createStylist = async (req, res) => {
       });
     }
 
-    // Create stylist
     const stylist = await Stylist.create({
       name: name.trim(),
       phone: phone.trim(),
@@ -88,6 +89,13 @@ export const getStylistById = async (req, res) => {
   try {
     const { id } = req.params;
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid stylist ID",
+      });
+    }
+
     const stylist = await Stylist.findById(id).lean();
 
     if (!stylist) {
@@ -113,6 +121,306 @@ export const getStylistById = async (req, res) => {
 };
 
 // ======================================================
+// GET STYLIST PROFILE + PERFORMANCE
+// GET /api/stylists/:id/profile
+// ======================================================
+
+export const getStylistProfile = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // --------------------------------------------------
+    // Validate ID
+    // --------------------------------------------------
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid stylist ID",
+      });
+    }
+
+    // --------------------------------------------------
+    // Get stylist
+    // --------------------------------------------------
+
+    const stylist = await Stylist.findById(id).lean();
+
+    if (!stylist) {
+      return res.status(404).json({
+        success: false,
+        message: "Stylist not found",
+      });
+    }
+
+    const stylistId = new mongoose.Types.ObjectId(id);
+
+    // ==================================================
+    // BOOKING STATISTICS
+    // ==================================================
+
+    const bookingStats = await Booking.aggregate([
+      {
+        $match: {
+          stylist: stylistId,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+
+          totalAppointments: {
+            $sum: 1,
+          },
+
+          completedAppointments: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: ["$status", "COMPLETED"],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+
+          confirmedAppointments: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: ["$status", "CONFIRMED"],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+
+          cancelledAppointments: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: ["$status", "CANCELLED"],
+                },
+                1,
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    const bookingSummary = bookingStats[0] || {
+      totalAppointments: 0,
+      completedAppointments: 0,
+      confirmedAppointments: 0,
+      cancelledAppointments: 0,
+    };
+
+    // ==================================================
+    // UNIQUE CLIENTS FROM BOOKINGS
+    // ==================================================
+
+    const bookingClients = await Booking.distinct(
+      "client",
+      {
+        stylist: stylistId,
+        client: {
+          $ne: null,
+        },
+      }
+    );
+
+    // ==================================================
+    // BILL STATISTICS
+    // ==================================================
+
+    const billStats = await Bill.aggregate([
+      {
+        $match: {
+          stylist: stylistId,
+        },
+      },
+      {
+        $group: {
+          _id: null,
+
+          totalBills: {
+            $sum: 1,
+          },
+
+          totalRevenue: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: ["$paymentStatus", "Paid"],
+                },
+                "$grandTotal",
+                0,
+              ],
+            },
+          },
+
+          pendingAmount: {
+            $sum: {
+              $cond: [
+                {
+                  $eq: ["$paymentStatus", "Pending"],
+                },
+                "$grandTotal",
+                0,
+              ],
+            },
+          },
+        },
+      },
+    ]);
+
+    const billSummary = billStats[0] || {
+      totalBills: 0,
+      totalRevenue: 0,
+      pendingAmount: 0,
+    };
+
+    // ==================================================
+    // UNIQUE CLIENTS FROM BILLS
+    // ==================================================
+
+    const billClients = await Bill.distinct(
+      "client",
+      {
+        stylist: stylistId,
+        client: {
+          $ne: null,
+        },
+      }
+    );
+
+    // ==================================================
+    // MERGE UNIQUE CLIENT IDS
+    // ==================================================
+
+    const uniqueClientIds = new Set();
+
+    [...bookingClients, ...billClients].forEach(
+      (clientId) => {
+        if (clientId) {
+          uniqueClientIds.add(clientId.toString());
+        }
+      }
+    );
+
+    const totalClients = uniqueClientIds.size;
+
+    // ==================================================
+    // AVERAGE SERVICE VALUE
+    // ==================================================
+
+    const totalRevenue = Number(
+      billSummary.totalRevenue || 0
+    );
+
+    const totalBills = Number(
+      billSummary.totalBills || 0
+    );
+
+    const averageServiceValue =
+      totalBills > 0
+        ? Math.round(totalRevenue / totalBills)
+        : 0;
+
+    // ==================================================
+    // RECENT BOOKINGS
+    // ==================================================
+
+    const recentBookings = await Booking.find({
+      stylist: stylistId,
+    })
+      .populate(
+        "client",
+        "name phone email"
+      )
+      .populate(
+        "service",
+        "name price duration"
+      )
+      .sort({
+        bookingDate: -1,
+        createdAt: -1,
+      })
+      .limit(10)
+      .lean();
+
+    // ==================================================
+    // RECENT BILLS
+    // ==================================================
+
+    const recentBills = await Bill.find({
+      stylist: stylistId,
+    })
+      .sort({
+        billDate: -1,
+        createdAt: -1,
+      })
+      .limit(10)
+      .lean();
+
+    // ==================================================
+    // RESPONSE
+    // ==================================================
+
+    return res.status(200).json({
+      success: true,
+
+      stylist,
+
+      stats: {
+        totalClients,
+
+        totalAppointments:
+          bookingSummary.totalAppointments || 0,
+
+        completedServices:
+          bookingSummary.completedAppointments || 0,
+
+        confirmedAppointments:
+          bookingSummary.confirmedAppointments || 0,
+
+        cancelledAppointments:
+          bookingSummary.cancelledAppointments || 0,
+
+        totalBills:
+          billSummary.totalBills || 0,
+
+        totalRevenue,
+
+        pendingAmount:
+          Number(billSummary.pendingAmount || 0),
+
+        averageServiceValue,
+      },
+
+      recentBookings,
+
+      recentBills,
+    });
+  } catch (error) {
+    console.error(
+      "GET STYLIST PROFILE ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch stylist profile",
+      error: error.message,
+    });
+  }
+};
+
+// ======================================================
 // UPDATE STYLIST
 // PATCH /api/stylists/:id
 // ======================================================
@@ -120,6 +428,13 @@ export const getStylistById = async (req, res) => {
 export const updateStylist = async (req, res) => {
   try {
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid stylist ID",
+      });
+    }
 
     const {
       name,
@@ -184,7 +499,10 @@ export const updateStylist = async (req, res) => {
       stylist,
     });
   } catch (error) {
-    console.error("UPDATE STYLIST ERROR:", error);
+    console.error(
+      "UPDATE STYLIST ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -203,6 +521,13 @@ export const deleteStylist = async (req, res) => {
   try {
     const { id } = req.params;
 
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid stylist ID",
+      });
+    }
+
     const stylist =
       await Stylist.findByIdAndDelete(id);
 
@@ -219,7 +544,10 @@ export const deleteStylist = async (req, res) => {
       stylist,
     });
   } catch (error) {
-    console.error("DELETE STYLIST ERROR:", error);
+    console.error(
+      "DELETE STYLIST ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
