@@ -1316,3 +1316,60 @@ export const updatePaymentStatus = async (
   }
 };
 
+// ========================================
+// GET TOTAL REVENUE
+// GET /api/bills/revenue
+// ========================================
+
+export const getTotalRevenue = async (req, res) => {
+  try {
+    const result = await Bill.aggregate([
+      {
+        $match: {
+          paymentStatus: {
+            $ne: "Cancelled",
+          },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalRevenue: {
+            $sum: "$grandTotal",
+          },
+          totalBills: {
+            $sum: 1,
+          },
+        },
+      },
+    ]);
+
+    const totalRevenue =
+      result.length > 0
+        ? Number(result[0].totalRevenue || 0)
+        : 0;
+
+    const totalBills =
+      result.length > 0
+        ? Number(result[0].totalBills || 0)
+        : 0;
+
+    return res.status(200).json({
+      success: true,
+      totalRevenue,
+      totalBills,
+    });
+  } catch (error) {
+    console.error(
+      "GET TOTAL REVENUE ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to calculate total revenue",
+      totalRevenue: 0,
+      totalBills: 0,
+    });
+  }
+};

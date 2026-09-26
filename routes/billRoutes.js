@@ -6,6 +6,7 @@ import {
   getBillById,
   getBillByInvoiceNumber,
   updatePaymentStatus,
+  getTotalRevenue,
 } from "../controllers/billController.js";
 
 const router = express.Router();
@@ -16,6 +17,13 @@ const router = express.Router();
 // ========================================
 
 router.post("/", createBill);
+
+// ========================================
+// GET TOTAL REVENUE
+// GET /api/bills/revenue
+// ========================================
+
+router.get("/revenue", getTotalRevenue);
 
 // ========================================
 // GET ALL BILLS
