@@ -9,48 +9,112 @@ import {
   deleteStylist,
 } from "../controllers/stylistController.js";
 
-const router = express.Router();
+import {
+  markAttendance,
+  getStylistAttendance,
+  getAttendanceSummary,
+} from "../controllers/stylistAttendanceController.js";
+
+import {
+  protectAdmin,
+} from "../middleware/authMiddleware.js";
+
+const router =
+  express.Router();
 
 // ======================================================
 // CREATE
 // POST /api/stylists
 // ======================================================
 
-router.post("/", createStylist);
+router.post(
+  "/",
+  protectAdmin,
+  createStylist
+);
 
 // ======================================================
 // GET ALL
 // GET /api/stylists
 // ======================================================
 
-router.get("/", getStylists);
+router.get(
+  "/",
+  protectAdmin,
+  getStylists
+);
 
 // ======================================================
-// GET STYLIST PROFILE
+// PROFILE
 // GET /api/stylists/:id/profile
+//
+// ?period=week
+// ?period=month
+// ?startDate=2026-09-01&endDate=2026-09-30
 // ======================================================
 
-router.get("/:id/profile", getStylistProfile);
+router.get(
+  "/:id/profile",
+  protectAdmin,
+  getStylistProfile
+);
+
+// ======================================================
+// ATTENDANCE
+// ======================================================
+
+// POST /api/stylists/:id/attendance
+router.post(
+  "/:id/attendance",
+  protectAdmin,
+  markAttendance
+);
+
+// GET /api/stylists/:id/attendance
+router.get(
+  "/:id/attendance",
+  protectAdmin,
+  getStylistAttendance
+);
+
+// GET /api/stylists/:id/attendance-summary
+router.get(
+  "/:id/attendance-summary",
+  protectAdmin,
+  getAttendanceSummary
+);
 
 // ======================================================
 // GET SINGLE
 // GET /api/stylists/:id
 // ======================================================
 
-router.get("/:id", getStylistById);
+router.get(
+  "/:id",
+  protectAdmin,
+  getStylistById
+);
 
 // ======================================================
 // UPDATE
 // PATCH /api/stylists/:id
 // ======================================================
 
-router.patch("/:id", updateStylist);
+router.patch(
+  "/:id",
+  protectAdmin,
+  updateStylist
+);
 
 // ======================================================
 // DELETE
 // DELETE /api/stylists/:id
 // ======================================================
 
-router.delete("/:id", deleteStylist);
+router.delete(
+  "/:id",
+  protectAdmin,
+  deleteStylist
+);
 
 export default router;
