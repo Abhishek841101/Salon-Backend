@@ -41,6 +41,7 @@ const stylistSchema = new mongoose.Schema(
       type: String,
       enum: ["ACTIVE", "INACTIVE"],
       default: "ACTIVE",
+      index: true,
     },
 
     // ======================================================
@@ -53,30 +54,32 @@ const stylistSchema = new mongoose.Schema(
     },
 
     // ======================================================
-    // SALARY SETTINGS
+    // SALARY
     // ======================================================
 
     salaryType: {
       type: String,
       enum: ["MONTHLY", "DAILY"],
       default: "MONTHLY",
+      index: true,
     },
 
-    // Fixed monthly salary
+    // Used when salaryType = MONTHLY
     monthlySalary: {
       type: Number,
       min: 0,
       default: 0,
     },
 
-    // Salary for normal 8-hour working day
+    // Used when salaryType = DAILY
+    // Salary for normal standard working day
     basicSalary8h: {
       type: Number,
       min: 0,
       default: 0,
     },
 
-    // Extra hour / overtime rate
+    // Overtime amount per hour
     overtimeRatePerHour: {
       type: Number,
       min: 0,
@@ -105,9 +108,19 @@ const stylistSchema = new mongoose.Schema(
   }
 );
 
-const Stylist = mongoose.model(
-  "Stylist",
-  stylistSchema
-);
+// ======================================================
+// INDEXES
+// ======================================================
+
+stylistSchema.index({
+  name: "text",
+  phone: "text",
+  email: "text",
+  specialization: "text",
+});
+
+const Stylist =
+  mongoose.models.Stylist ||
+  mongoose.model("Stylist", stylistSchema);
 
 export default Stylist;

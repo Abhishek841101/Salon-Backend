@@ -35,7 +35,15 @@ router.post(
 
 // ======================================================
 // GET ALL
+//
 // GET /api/stylists
+//
+// Search:
+// /api/stylists?search=rahul
+// /api/stylists?search=9876543210
+//
+// Status:
+// /api/stylists?status=ACTIVE
 // ======================================================
 
 router.get(
@@ -46,11 +54,16 @@ router.get(
 
 // ======================================================
 // PROFILE
+//
 // GET /api/stylists/:id/profile
 //
 // ?period=week
 // ?period=month
-// ?startDate=2026-09-01&endDate=2026-09-30
+//
+// OR
+//
+// ?startDate=2026-09-01
+// &endDate=2026-09-30
 // ======================================================
 
 router.get(
@@ -63,21 +76,39 @@ router.get(
 // ATTENDANCE
 // ======================================================
 
+// ------------------------------------------------------
+// CHECK-IN / CHECK-OUT / UPDATE
+//
 // POST /api/stylists/:id/attendance
+// ------------------------------------------------------
+
 router.post(
   "/:id/attendance",
   protectAdmin,
   markAttendance
 );
 
+// ------------------------------------------------------
+// ATTENDANCE HISTORY
+//
 // GET /api/stylists/:id/attendance
+//
+// ?startDate=2026-09-01
+// &endDate=2026-09-30
+// ------------------------------------------------------
+
 router.get(
   "/:id/attendance",
   protectAdmin,
   getStylistAttendance
 );
 
+// ------------------------------------------------------
+// ATTENDANCE SUMMARY
+//
 // GET /api/stylists/:id/attendance-summary
+// ------------------------------------------------------
+
 router.get(
   "/:id/attendance-summary",
   protectAdmin,
@@ -86,6 +117,7 @@ router.get(
 
 // ======================================================
 // GET SINGLE
+//
 // GET /api/stylists/:id
 // ======================================================
 
@@ -97,6 +129,7 @@ router.get(
 
 // ======================================================
 // UPDATE
+//
 // PATCH /api/stylists/:id
 // ======================================================
 
@@ -108,6 +141,7 @@ router.patch(
 
 // ======================================================
 // DELETE
+//
 // DELETE /api/stylists/:id
 // ======================================================
 

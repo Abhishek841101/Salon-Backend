@@ -4,6 +4,16 @@ import Stylist from "../models/Stylist.js";
 import StylistAttendance from "../models/StylistAttendance.js";
 
 // ======================================================
+// CONSTANTS
+// ======================================================
+
+// Monthly salary ko daily salary me convert karne ke liye
+// 26 working days use kiye ja rahe hain.
+const MONTHLY_WORKING_DAYS = 26;
+
+const INDIA_TIMEZONE = "Asia/Kolkata";
+
+// ======================================================
 // HELPERS
 // ======================================================
 
@@ -11,10 +21,15 @@ const isValidObjectId = (id) => {
   return mongoose.Types.ObjectId.isValid(id);
 };
 
-const toNumber = (
-  value,
-  fallback = 0
-) => {
+const toNumber = (value, fallback = 0) => {
+  if (
+    value === undefined ||
+    value === null ||
+    value === ""
+  ) {
+    return fallback;
+  }
+
   const number = Number(value);
 
   return Number.isFinite(number)
@@ -23,30 +38,77 @@ const toNumber = (
 };
 
 const roundMoney = (value) => {
-  return Math.round(
-    Number(value || 0) * 100
-  ) / 100;
+  return (
+    Math.round(Number(value || 0) * 100) / 100
+  );
+};
+
+const normalizeStatus = (value) => {
+  return String(value || "PRESENT")
+    .trim()
+    .toUpperCase();
 };
 
 // ======================================================
-// DATE
+// INDIA DATE HELPERS
 // ======================================================
 
-const normalizeDate = (value) => {
+// YYYY-MM-DD return karta hai India timezone me
+const getIndiaDateString = (date = new Date()) => {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: INDIA_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+};
+
+// YYYY-MM-DD ko India midnight ke UTC Date me convert
+const indiaDateToUTC = (dateString) => {
+  if (
+    typeof dateString !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(
+      dateString
+    )
+  ) {
+    return null;
+  }
+
+  const date = new Date(
+    `${dateString}T00:00:00+05:30`
+  );
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date;
+};
+
+// Request date ko attendance date me convert
+const normalizeAttendanceDate = (value) => {
+  if (!value) {
+    return null;
+  }
+
+  // YYYY-MM-DD
+  if (
+    typeof value === "string" &&
+    /^\d{4}-\d{2}-\d{2}$/.test(value)
+  ) {
+    return indiaDateToUTC(value);
+  }
+
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
     return null;
   }
 
-  date.setHours(
-    0,
-    0,
-    0,
-    0
-  );
+  const indiaDate =
+    getIndiaDateString(date);
 
-  return date;
+  return indiaDateToUTC(indiaDate);
 };
 
 // ======================================================
@@ -57,42 +119,226 @@ const getDateRange = (
   startDate,
   endDate
 ) => {
-  const start = startDate
-    ? new Date(startDate)
-    : new Date(
-        new Date().getFullYear(),
-        new Date().getMonth(),
-        1
-      );
+  const today =
+    getIndiaDateString();
 
-  const end = endDate
-    ? new Date(endDate)
-    : new Date();
+  const startString =
+    startDate || today;
 
-  if (
-    Number.isNaN(start.getTime()) ||
-    Number.isNaN(end.getTime())
-  ) {
+  const endString =
+    endDate || today;
+
+  const start =
+    indiaDateToUTC(startString);
+
+  const endStart =
+    indiaDateToUTC(endString);
+
+  if (!start || !endStart) {
     return null;
   }
 
-  start.setHours(
-    0,
-    0,
-    0,
-    0
+  const end =
+    new Date(endStart);
+
+  // India next-day midnight minus 1ms
+  end.setTime(
+    end.getTime() +
+      24 * 60 * 60 * 1000 -
+      1
   );
 
-  end.setHours(
-    23,
-    59,
-    59,
-    999
-  );
+  if (start > end) {
+    return null;
+  }
 
   return {
     start,
     end,
+  };
+};
+
+// ======================================================
+// DATE VALIDATION
+// ======================================================
+
+const parseDateTime = (
+  value,
+  fieldName
+) => {
+  if (!value) {
+    return {
+      date: null,
+      error: null,
+    };
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return {
+      date: null,
+      error: `Invalid ${fieldName}`,
+    };
+  }
+
+  return {
+    date,
+    error: null,
+  };
+};
+
+// ======================================================
+// SALARY CALCULATION
+// ======================================================
+
+const getDailyBasicSalary = (
+  stylist
+) => {
+  const salaryType =
+    stylist.salaryType === "DAILY"
+      ? "DAILY"
+      : "MONTHLY";
+
+  const monthlySalary =
+    Math.max(
+      0,
+      toNumber(
+        stylist.monthlySalary
+      )
+    );
+
+  const dailySalary =
+    Math.max(
+      0,
+      toNumber(
+        stylist.basicSalary8h
+      )
+    );
+
+  if (salaryType === "MONTHLY") {
+    return roundMoney(
+      monthlySalary /
+        MONTHLY_WORKING_DAYS
+    );
+  }
+
+  return roundMoney(dailySalary);
+};
+
+// ======================================================
+// ATTENDANCE SALARY CALCULATION
+// ======================================================
+
+const calculateAttendanceSalary = ({
+  stylist,
+  status,
+  workedHours,
+}) => {
+  const standardHours =
+    Math.max(
+      1,
+      toNumber(
+        stylist.standardWorkingHours,
+        8
+      )
+    );
+
+  const overtimeRate =
+    Math.max(
+      0,
+      toNumber(
+        stylist.overtimeRatePerHour
+      )
+    );
+
+  const dailyBasicSalary =
+    getDailyBasicSalary(
+      stylist
+    );
+
+  const safeWorkedHours =
+    Math.max(
+      0,
+      toNumber(workedHours)
+    );
+
+  const regularHours =
+    Math.min(
+      safeWorkedHours,
+      standardHours
+    );
+
+  let overtimeHours =
+    Math.max(
+      0,
+      safeWorkedHours -
+        standardHours
+    );
+
+  let basicSalaryEarned = 0;
+
+  if (status === "PRESENT") {
+    basicSalaryEarned =
+      dailyBasicSalary;
+  }
+
+  if (status === "HALF_DAY") {
+    basicSalaryEarned =
+      dailyBasicSalary / 2;
+
+    // Half-day ke case me standard
+    // hours ka half regular work maana jayega.
+    // Lekin agar actual hours standard se zyada
+    // hain to OT actual hours ke according rahega.
+  }
+
+  if (
+    status === "ABSENT" ||
+    status === "LEAVE"
+  ) {
+    overtimeHours = 0;
+    basicSalaryEarned = 0;
+  }
+
+  const overtimeSalary =
+    overtimeHours *
+    overtimeRate;
+
+  const totalSalaryEarned =
+    basicSalaryEarned +
+    overtimeSalary;
+
+  return {
+    standardHours:
+      roundMoney(
+        standardHours
+      ),
+
+    regularHours:
+      roundMoney(
+        regularHours
+      ),
+
+    overtimeHours:
+      roundMoney(
+        overtimeHours
+      ),
+
+    basicSalaryEarned:
+      roundMoney(
+        basicSalaryEarned
+      ),
+
+    overtimeSalary:
+      roundMoney(
+        overtimeSalary
+      ),
+
+    totalSalaryEarned:
+      roundMoney(
+        totalSalaryEarned
+      ),
   };
 };
 
@@ -102,378 +348,437 @@ const getDateRange = (
 // POST /api/stylists/:id/attendance
 // ======================================================
 
-export const markAttendance = async (
-  req,
-  res
-) => {
-  try {
-    const { id } = req.params;
+export const markAttendance =
+  async (req, res) => {
+    try {
+      const { id } =
+        req.params;
 
-    const {
-      date,
-      status = "PRESENT",
-      checkIn,
-      checkOut,
-      workedHours,
-      overtimeHours,
-      notes = "",
-    } = req.body;
+      const {
+        date,
+        status: rawStatus = "PRESENT",
+        checkIn,
+        checkOut,
+        workedHours,
+        notes = "",
+      } = req.body;
 
-    // --------------------------------------------------
-    // VALIDATE ID
-    // --------------------------------------------------
-
-    if (!isValidObjectId(id)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Invalid stylist ID",
-      });
-    }
-
-    // --------------------------------------------------
-    // STYLIST
-    // --------------------------------------------------
-
-    const stylist =
-      await Stylist.findById(id);
-
-    if (!stylist) {
-      return res.status(404).json({
-        success: false,
-        message:
-          "Stylist not found",
-      });
-    }
-
-    // --------------------------------------------------
-    // DATE
-    // --------------------------------------------------
-
-    if (!date) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Attendance date is required",
-      });
-    }
-
-    const attendanceDate =
-      normalizeDate(date);
-
-    if (!attendanceDate) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Invalid attendance date",
-      });
-    }
-
-    // --------------------------------------------------
-    // STATUS
-    // --------------------------------------------------
-
-    const allowedStatuses = [
-      "PRESENT",
-      "ABSENT",
-      "HALF_DAY",
-      "LEAVE",
-    ];
-
-    if (
-      !allowedStatuses.includes(
-        status
-      )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Invalid attendance status",
-      });
-    }
-
-    // --------------------------------------------------
-    // SALARY SETTINGS
-    // --------------------------------------------------
-
-    const standardHours =
-      Math.max(
-        1,
-        toNumber(
-          stylist.standardWorkingHours,
-          8
-        )
-      );
-
-    const basicSalary8h =
-      Math.max(
-        0,
-        toNumber(
-          stylist.basicSalary8h
-        )
-      );
-
-    const overtimeRate =
-      Math.max(
-        0,
-        toNumber(
-          stylist.overtimeRatePerHour
-        )
-      );
-
-    // --------------------------------------------------
-    // WORKED HOURS
-    // --------------------------------------------------
-
-    let finalWorkedHours = 0;
-
-    if (
-      workedHours !== undefined &&
-      workedHours !== null &&
-      workedHours !== ""
-    ) {
-      finalWorkedHours =
-        Math.max(
-          0,
-          toNumber(workedHours)
-        );
-    } else if (
-      checkIn &&
-      checkOut
-    ) {
-      const inTime =
-        new Date(checkIn);
-
-      const outTime =
-        new Date(checkOut);
+      // ==================================================
+      // VALIDATE STYLIST ID
+      // ==================================================
 
       if (
-        !Number.isNaN(
-          inTime.getTime()
-        ) &&
-        !Number.isNaN(
-          outTime.getTime()
-        ) &&
-        outTime > inTime
+        !isValidObjectId(id)
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid stylist ID",
+        });
+      }
+
+      // ==================================================
+      // GET STYLIST
+      // ==================================================
+
+      const stylist =
+        await Stylist.findById(id);
+
+      if (!stylist) {
+        return res.status(404).json({
+          success: false,
+          message:
+            "Stylist not found",
+        });
+      }
+
+      // ==================================================
+      // INACTIVE STAFF
+      // ==================================================
+
+      if (
+        stylist.status ===
+        "INACTIVE"
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Inactive stylist cannot be marked for attendance",
+        });
+      }
+
+      // ==================================================
+      // DATE
+      // ==================================================
+
+      if (!date) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Attendance date is required",
+        });
+      }
+
+      const attendanceDate =
+        normalizeAttendanceDate(
+          date
+        );
+
+      if (!attendanceDate) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid attendance date",
+        });
+      }
+
+      // ==================================================
+      // STATUS
+      // ==================================================
+
+      const status =
+        normalizeStatus(
+          rawStatus
+        );
+
+      const allowedStatuses = [
+        "PRESENT",
+        "ABSENT",
+        "HALF_DAY",
+        "LEAVE",
+      ];
+
+      if (
+        !allowedStatuses.includes(
+          status
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid attendance status",
+        });
+      }
+
+      // ==================================================
+      // CHECK-IN
+      // ==================================================
+
+      const parsedCheckIn =
+        parseDateTime(
+          checkIn,
+          "check-in time"
+        );
+
+      if (
+        parsedCheckIn.error
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            parsedCheckIn.error,
+        });
+      }
+
+      // ==================================================
+      // CHECK-OUT
+      // ==================================================
+
+      const parsedCheckOut =
+        parseDateTime(
+          checkOut,
+          "check-out time"
+        );
+
+      if (
+        parsedCheckOut.error
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            parsedCheckOut.error,
+        });
+      }
+
+      // ==================================================
+      // STATUS VALIDATION
+      // ==================================================
+
+      if (
+        status === "PRESENT" ||
+        status === "HALF_DAY"
+      ) {
+        if (
+          !parsedCheckIn.date
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Check-in time is required for PRESENT or HALF_DAY",
+          });
+        }
+      }
+
+      if (
+        status === "ABSENT" ||
+        status === "LEAVE"
+      ) {
+        // Absent / Leave me check-in/out
+        // automatically remove karenge.
+        parsedCheckIn.date = null;
+        parsedCheckOut.date = null;
+      }
+
+      // ==================================================
+      // CHECK-OUT VALIDATION
+      // ==================================================
+
+      if (
+        parsedCheckOut.date &&
+        !parsedCheckIn.date
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Check-in is required before check-out",
+        });
+      }
+
+      if (
+        parsedCheckIn.date &&
+        parsedCheckOut.date
+      ) {
+        if (
+          parsedCheckOut.date <=
+          parsedCheckIn.date
+        ) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "Check-out must be after check-in",
+          });
+        }
+      }
+
+      // ==================================================
+      // WORKED HOURS
+      // ==================================================
+
+      let finalWorkedHours = 0;
+
+      // --------------------------------------------------
+      // If check-in + check-out available
+      // calculate automatically.
+      // --------------------------------------------------
+
+      if (
+        parsedCheckIn.date &&
+        parsedCheckOut.date
       ) {
         finalWorkedHours =
-          (outTime - inTime) /
+          (
+            parsedCheckOut.date -
+            parsedCheckIn.date
+          ) /
           (1000 * 60 * 60);
       }
-    }
 
-    // ABSENT / LEAVE = 0 hours
-    if (
-      status === "ABSENT" ||
-      status === "LEAVE"
-    ) {
-      finalWorkedHours = 0;
-    }
+      // --------------------------------------------------
+      // If only workedHours manually provided
+      // --------------------------------------------------
 
-    // --------------------------------------------------
-    // REGULAR HOURS
-    // --------------------------------------------------
+      if (
+        !parsedCheckOut.date &&
+        workedHours !==
+          undefined &&
+        workedHours !== null &&
+        workedHours !== ""
+      ) {
+        finalWorkedHours =
+          Math.max(
+            0,
+            toNumber(
+              workedHours
+            )
+          );
+      }
 
-    const regularHours =
-      Math.min(
-        finalWorkedHours,
-        standardHours
-      );
+      // --------------------------------------------------
+      // ABSENT / LEAVE = 0
+      // --------------------------------------------------
 
-    // --------------------------------------------------
-    // OVERTIME
-    // --------------------------------------------------
+      if (
+        status === "ABSENT" ||
+        status === "LEAVE"
+      ) {
+        finalWorkedHours = 0;
+      }
 
-    let finalOvertimeHours;
+      // ==================================================
+      // SALARY
+      // ==================================================
 
-    if (
-      overtimeHours !== undefined &&
-      overtimeHours !== null &&
-      overtimeHours !== ""
-    ) {
-      finalOvertimeHours =
-        Math.max(
-          0,
-          toNumber(
-            overtimeHours
-          )
-        );
-    } else {
-      finalOvertimeHours =
-        Math.max(
-          0,
-          finalWorkedHours -
-            standardHours
-        );
-    }
-
-    // ABSENT / LEAVE cannot have OT
-    if (
-      status === "ABSENT" ||
-      status === "LEAVE"
-    ) {
-      finalOvertimeHours = 0;
-    }
-
-    // --------------------------------------------------
-    // BASIC SALARY
-    // --------------------------------------------------
-
-    let basicSalaryEarned = 0;
-
-    if (status === "PRESENT") {
-      basicSalaryEarned =
-        basicSalary8h;
-    }
-
-    if (status === "HALF_DAY") {
-      basicSalaryEarned =
-        basicSalary8h / 2;
-    }
-
-    // --------------------------------------------------
-    // OT SALARY
-    // --------------------------------------------------
-
-    const overtimeSalary =
-      finalOvertimeHours *
-      overtimeRate;
-
-    // --------------------------------------------------
-    // TOTAL
-    // --------------------------------------------------
-
-    const totalSalaryEarned =
-      basicSalaryEarned +
-      overtimeSalary;
-
-    // --------------------------------------------------
-    // UPSERT
-    //
-    // One stylist + one date
-    // --------------------------------------------------
-
-    const attendance =
-      await StylistAttendance.findOneAndUpdate(
-        {
-          stylist: id,
-          date: attendanceDate,
-        },
-        {
-          stylist: id,
-          date: attendanceDate,
-
+      const calculation =
+        calculateAttendanceSalary({
+          stylist,
           status,
+          workedHours:
+            finalWorkedHours,
+        });
 
-          checkIn: checkIn
-            ? new Date(checkIn)
-            : null,
+      // ==================================================
+      // UPSERT
+      // ==================================================
 
-          checkOut: checkOut
-            ? new Date(checkOut)
-            : null,
+      const attendance =
+        await StylistAttendance.findOneAndUpdate(
+          {
+            stylist: id,
+            date: attendanceDate,
+          },
+          {
+            $set: {
+              stylist: id,
+              date: attendanceDate,
+
+              status,
+
+              checkIn:
+                parsedCheckIn.date ||
+                null,
+
+              checkOut:
+                parsedCheckOut.date ||
+                null,
+
+              workedHours:
+                calculation
+                  .standardHours >= 0
+                  ? roundMoney(
+                      finalWorkedHours
+                    )
+                  : 0,
+
+              overtimeHours:
+                calculation.overtimeHours,
+
+              basicSalaryEarned:
+                calculation.basicSalaryEarned,
+
+              overtimeSalary:
+                calculation.overtimeSalary,
+
+              totalSalaryEarned:
+                calculation.totalSalaryEarned,
+
+              notes:
+                String(
+                  notes || ""
+                ).trim(),
+            },
+          },
+          {
+            new: true,
+            upsert: true,
+            runValidators: true,
+            setDefaultsOnInsert: true,
+          }
+        ).populate(
+          "stylist",
+          "name phone email specialization status salaryType monthlySalary basicSalary8h overtimeRatePerHour standardWorkingHours"
+        );
+
+      // ==================================================
+      // RESPONSE
+      // ==================================================
+
+      return res.status(200).json({
+        success: true,
+
+        message:
+          "Attendance saved successfully",
+
+        attendance,
+
+        calculation: {
+          salaryType:
+            stylist.salaryType,
+
+          monthlySalary:
+            roundMoney(
+              stylist.monthlySalary
+            ),
+
+          dailyBasicSalary:
+            getDailyBasicSalary(
+              stylist
+            ),
+
+          monthlyWorkingDays:
+            stylist.salaryType ===
+            "MONTHLY"
+              ? MONTHLY_WORKING_DAYS
+              : null,
+
+          standardWorkingHours:
+            calculation.standardHours,
 
           workedHours:
             roundMoney(
               finalWorkedHours
             ),
 
+          regularHours:
+            calculation.regularHours,
+
           overtimeHours:
-            roundMoney(
-              finalOvertimeHours
-            ),
+            calculation.overtimeHours,
 
           basicSalaryEarned:
-            roundMoney(
-              basicSalaryEarned
-            ),
+            calculation.basicSalaryEarned,
 
           overtimeSalary:
-            roundMoney(
-              overtimeSalary
-            ),
+            calculation.overtimeSalary,
 
           totalSalaryEarned:
-            roundMoney(
-              totalSalaryEarned
-            ),
-
-          notes:
-            String(notes || "").trim(),
+            calculation.totalSalaryEarned,
         },
-        {
-          new: true,
-          upsert: true,
-          runValidators: true,
-          setDefaultsOnInsert: true,
-        }
-      ).populate(
-        "stylist",
-        "name phone email specialization status salaryType monthlySalary basicSalary8h overtimeRatePerHour standardWorkingHours"
+      });
+    } catch (error) {
+      console.error(
+        "MARK STYLIST ATTENDANCE ERROR:",
+        error
       );
 
-    return res.status(200).json({
-      success: true,
+      // Duplicate index race condition
+      if (
+        error?.code === 11000
+      ) {
+        return res.status(409).json({
+          success: false,
+          message:
+            "Attendance already exists for this stylist and date. Please refresh and try again.",
+        });
+      }
 
-      message:
-        "Attendance saved successfully",
-
-      attendance,
-
-      calculation: {
-        standardWorkingHours:
-          standardHours,
-
-        workedHours:
-          roundMoney(
-            finalWorkedHours
-          ),
-
-        regularHours:
-          roundMoney(
-            regularHours
-          ),
-
-        overtimeHours:
-          roundMoney(
-            finalOvertimeHours
-          ),
-
-        basicSalaryEarned:
-          roundMoney(
-            basicSalaryEarned
-          ),
-
-        overtimeSalary:
-          roundMoney(
-            overtimeSalary
-          ),
-
-        totalSalaryEarned:
-          roundMoney(
-            totalSalaryEarned
-          ),
-      },
-    });
-  } catch (error) {
-    console.error(
-      "MARK STYLIST ATTENDANCE ERROR:",
-      error
-    );
-
-    return res.status(500).json({
-      success: false,
-      message:
-        "Failed to save attendance",
-      error: error.message,
-    });
-  }
-};
+      return res.status(500).json({
+        success: false,
+        message:
+          "Failed to save attendance",
+        error:
+          error.message,
+      });
+    }
+  };
 
 // ======================================================
 // GET ATTENDANCE
 //
 // GET /api/stylists/:id/attendance
+//
+// Optional:
+// ?startDate=2026-09-01
+// &endDate=2026-09-30
 // ======================================================
 
 export const getStylistAttendance =
@@ -482,7 +787,9 @@ export const getStylistAttendance =
       const { id } =
         req.params;
 
-      if (!isValidObjectId(id)) {
+      if (
+        !isValidObjectId(id)
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -493,7 +800,17 @@ export const getStylistAttendance =
       const stylist =
         await Stylist.findById(id)
           .select(
-            "name phone email status salaryType monthlySalary basicSalary8h overtimeRatePerHour standardWorkingHours"
+            [
+              "name",
+              "phone",
+              "email",
+              "status",
+              "salaryType",
+              "monthlySalary",
+              "basicSalary8h",
+              "overtimeRatePerHour",
+              "standardWorkingHours",
+            ].join(" ")
           )
           .lean();
 
@@ -532,6 +849,39 @@ export const getStylistAttendance =
           })
           .lean();
 
+      const totalSalary =
+        attendance.reduce(
+          (sum, item) =>
+            sum +
+            Number(
+              item.totalSalaryEarned ||
+                0
+            ),
+          0
+        );
+
+      const totalWorkedHours =
+        attendance.reduce(
+          (sum, item) =>
+            sum +
+            Number(
+              item.workedHours ||
+                0
+            ),
+          0
+        );
+
+      const totalOvertimeHours =
+        attendance.reduce(
+          (sum, item) =>
+            sum +
+            Number(
+              item.overtimeHours ||
+                0
+            ),
+          0
+        );
+
       return res.status(200).json({
         success: true,
 
@@ -548,6 +898,23 @@ export const getStylistAttendance =
           attendance.length,
 
         attendance,
+
+        totals: {
+          workedHours:
+            roundMoney(
+              totalWorkedHours
+            ),
+
+          overtimeHours:
+            roundMoney(
+              totalOvertimeHours
+            ),
+
+          salary:
+            roundMoney(
+              totalSalary
+            ),
+        },
       });
     } catch (error) {
       console.error(
@@ -559,7 +926,8 @@ export const getStylistAttendance =
         success: false,
         message:
           "Failed to fetch attendance",
-        error: error.message,
+        error:
+          error.message,
       });
     }
   };
@@ -576,7 +944,9 @@ export const getAttendanceSummary =
       const { id } =
         req.params;
 
-      if (!isValidObjectId(id)) {
+      if (
+        !isValidObjectId(id)
+      ) {
         return res.status(400).json({
           success: false,
           message:
@@ -610,14 +980,16 @@ export const getAttendanceSummary =
         });
       }
 
+      const stylistId =
+        new mongoose.Types.ObjectId(
+          id
+        );
+
       const stats =
         await StylistAttendance.aggregate([
           {
             $match: {
-              stylist:
-                new mongoose.Types.ObjectId(
-                  id
-                ),
+              stylist: stylistId,
 
               date: {
                 $gte: range.start,
@@ -743,6 +1115,7 @@ export const getAttendanceSummary =
           id: stylist._id,
           name: stylist.name,
           phone: stylist.phone,
+          email: stylist.email,
           status: stylist.status,
 
           salary: {
@@ -750,16 +1123,30 @@ export const getAttendanceSummary =
               stylist.salaryType,
 
             monthlySalary:
-              stylist.monthlySalary,
+              roundMoney(
+                stylist.monthlySalary
+              ),
+
+            dailyBasicSalary:
+              getDailyBasicSalary(
+                stylist
+              ),
 
             basicSalary8h:
-              stylist.basicSalary8h,
+              roundMoney(
+                stylist.basicSalary8h
+              ),
 
             overtimeRatePerHour:
-              stylist.overtimeRatePerHour,
+              roundMoney(
+                stylist.overtimeRatePerHour
+              ),
 
             standardWorkingHours:
-              stylist.standardWorkingHours,
+              Number(
+                stylist.standardWorkingHours ||
+                  8
+              ),
           },
         },
 
@@ -772,19 +1159,34 @@ export const getAttendanceSummary =
 
         attendance: {
           totalDays:
-            summary.totalDays,
+            Number(
+              summary.totalDays ||
+                0
+            ),
 
           presentDays:
-            summary.presentDays,
+            Number(
+              summary.presentDays ||
+                0
+            ),
 
           absentDays:
-            summary.absentDays,
+            Number(
+              summary.absentDays ||
+                0
+            ),
 
           halfDays:
-            summary.halfDays,
+            Number(
+              summary.halfDays ||
+                0
+            ),
 
           leaveDays:
-            summary.leaveDays,
+            Number(
+              summary.leaveDays ||
+                0
+            ),
 
           totalWorkedHours:
             roundMoney(
@@ -824,7 +1226,8 @@ export const getAttendanceSummary =
         success: false,
         message:
           "Failed to get attendance summary",
-        error: error.message,
+        error:
+          error.message,
       });
     }
   };
