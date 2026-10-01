@@ -42,6 +42,10 @@ const clientSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    anniversaryDate: {
+  type: Date,
+  default: null,
+},
 
     address: {
       type: String,

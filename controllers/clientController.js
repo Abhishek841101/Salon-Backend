@@ -133,6 +133,172 @@ const deleteFromCloudinary = async (publicId) => {
 //     });
 //   }
 // };
+// export const createClient = async (req, res) => {
+//   try {
+//     console.log("\n========================================");
+//     console.log("          CREATE CLIENT");
+//     console.log("========================================");
+
+//     console.log("REQ BODY :", req.body);
+//     console.log("REQ FILE :", req.file ? "IMAGE RECEIVED" : "NO IMAGE");
+
+//     // ========================================
+//     // SAFE BODY
+//     // ========================================
+
+//     const body = req.body || {};
+
+//     const {
+//       name,
+//       phone,
+//       email = "",
+//       gender = "",
+//       dateOfBirth = null,
+//       address = "",
+//       notes = "",
+//     } = body;
+
+//     // ========================================
+//     // REQUIRED FIELDS
+//     // ========================================
+
+//     if (!name || !String(name).trim()) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Client name is required",
+//       });
+//     }
+
+//     if (!phone || !String(phone).trim()) {
+//       return res.status(400).json({
+//         success: false,
+//         message: "Client phone number is required",
+//       });
+//     }
+
+//     // ========================================
+//     // CHECK DUPLICATE PHONE
+//     // ========================================
+
+//     const existingClient = await Client.findOne({
+//       phone: String(phone).trim(),
+//     });
+
+//     if (existingClient) {
+//       return res.status(409).json({
+//         success: false,
+//         message: "Client with this phone number already exists",
+//       });
+//     }
+
+//     // ========================================
+//     // IMAGE
+//     // ========================================
+
+//     let profileImage = {
+//       url: "",
+//       publicId: "",
+//     };
+
+//     if (req.file) {
+//       console.log("Uploading image to Cloudinary...");
+
+//       /*
+//         IMPORTANT:
+//         Yahan apna existing Cloudinary upload function use karo.
+        
+//         Example:
+//         const result = await uploadToCloudinary(req.file.buffer);
+
+//         profileImage = {
+//           url: result.secure_url,
+//           publicId: result.public_id,
+//         };
+//       */
+
+//       const result = await uploadToCloudinary(req.file.buffer);
+
+//       profileImage = {
+//         url: result.secure_url,
+//         publicId: result.public_id,
+//       };
+
+//       console.log("Cloudinary URL :", result.secure_url);
+//       console.log("Cloudinary ID  :", result.public_id);
+//     }
+
+//     // ========================================
+//     // CREATE CLIENT
+//     // ========================================
+
+//     const client = await Client.create({
+//       name: String(name).trim(),
+
+//       phone: String(phone).trim(),
+
+//       email: email
+//         ? String(email).trim().toLowerCase()
+//         : "",
+
+//       gender: gender || "",
+
+//       dateOfBirth:
+//         dateOfBirth && dateOfBirth !== ""
+//           ? new Date(dateOfBirth)
+//           : null,
+
+//       address: address
+//         ? String(address).trim()
+//         : "",
+
+//       profileImage,
+
+//       notes: notes
+//         ? String(notes).trim()
+//         : "",
+
+//       isActive: true,
+
+//       lastVisitAt: null,
+
+//       totalVisits: 0,
+
+//       totalSpent: 0,
+//     });
+
+//     // ========================================
+//     // RESPONSE
+//     // ========================================
+
+//     console.log("CLIENT CREATED :", client._id);
+
+//     return res.status(201).json({
+//       success: true,
+//       message: "Client created successfully",
+//       client,
+//     });
+//   } catch (error) {
+//     console.error("\n========================================");
+//     console.error("       CREATE CLIENT ERROR");
+//     console.error("========================================");
+//     console.error(error);
+//     console.error("========================================");
+
+//     // Duplicate phone
+//     if (error.code === 11000) {
+//       return res.status(409).json({
+//         success: false,
+//         message: "Client with this phone number already exists",
+//       });
+//     }
+
+//     return res.status(500).json({
+//       success: false,
+//       message: "Failed to create client",
+//       error: error.message,
+//     });
+//   }
+// };
 export const createClient = async (req, res) => {
   try {
     console.log("\n========================================");
@@ -154,6 +320,7 @@ export const createClient = async (req, res) => {
       email = "",
       gender = "",
       dateOfBirth = null,
+      anniversaryDate = null,
       address = "",
       notes = "",
     } = body;
@@ -203,19 +370,6 @@ export const createClient = async (req, res) => {
     if (req.file) {
       console.log("Uploading image to Cloudinary...");
 
-      /*
-        IMPORTANT:
-        Yahan apna existing Cloudinary upload function use karo.
-        
-        Example:
-        const result = await uploadToCloudinary(req.file.buffer);
-
-        profileImage = {
-          url: result.secure_url,
-          publicId: result.public_id,
-        };
-      */
-
       const result = await uploadToCloudinary(req.file.buffer);
 
       profileImage = {
@@ -245,6 +399,12 @@ export const createClient = async (req, res) => {
       dateOfBirth:
         dateOfBirth && dateOfBirth !== ""
           ? new Date(dateOfBirth)
+          : null,
+
+      // OPTIONAL ANNIVERSARY
+      anniversaryDate:
+        anniversaryDate && anniversaryDate !== ""
+          ? new Date(anniversaryDate)
           : null,
 
       address: address
@@ -299,7 +459,6 @@ export const createClient = async (req, res) => {
     });
   }
 };
-
 // ========================================
 // GET ALL CLIENTS
 // ========================================
