@@ -13,6 +13,7 @@ import dashboardRoutes from "./routes/dashboardRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import stylistRoutes from "./routes/stylistRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
+import productRoutes from "./routes/productRoutes.js";
 
 
 dotenv.config();
@@ -79,6 +80,10 @@ app.use("/api/bookings", bookingRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/stylists", stylistRoutes);
 app.use("/api/attendance", attendanceRoutes);
+app.use(
+  "/api/products",
+  productRoutes
+);
 // ========================================
 // 404 ROUTE
 // ========================================
