@@ -640,7 +640,6 @@
 
 
 
-
 import Bill from "../models/Bill.js";
 import Client from "../models/Client.js";
 import Service from "../models/Service.js";
@@ -687,7 +686,6 @@ export const createBill = async (req, res) => {
       });
     }
 
-    // STAFF / STYLIST REQUIRED
     if (!stylistId) {
       return res.status(400).json({
         success: false,
@@ -735,7 +733,6 @@ export const createBill = async (req, res) => {
       });
     }
 
-    // Only ACTIVE stylist can be selected
     if (stylist.status !== "ACTIVE") {
       return res.status(400).json({
         success: false,
@@ -772,8 +769,8 @@ export const createBill = async (req, res) => {
 
     for (const item of items) {
       const service = services.find(
-        (service) =>
-          service._id.toString() ===
+        (serviceItem) =>
+          serviceItem._id.toString() ===
           String(item.serviceId)
       );
 
@@ -870,7 +867,6 @@ export const createBill = async (req, res) => {
     const allowedPaymentStatuses = [
       "Paid",
       "Pending",
-      "Partial",
     ];
 
     if (
@@ -1229,11 +1225,10 @@ export const updatePaymentStatus = async (
       paymentMethod,
     } = req.body;
 
+    // Keep these compatible with Bill model
     const allowedStatuses = [
       "Paid",
       "Pending",
-      "Partial",
-      "Cancelled",
     ];
 
     const allowedPaymentMethods = [
@@ -1312,52 +1307,489 @@ export const updatePaymentStatus = async (
       success: false,
       message:
         "Failed to update payment status",
+      error: error.message,
     });
   }
 };
 
 // ========================================
-// GET TOTAL REVENUE
-// GET /api/bills/revenue
+// INDIA DATE HELPERS
 // ========================================
 
-export const getTotalRevenue = async (req, res) => {
+const getIndiaDateParts = (
+  date = new Date()
+) => {
+  const formatter =
+    new Intl.DateTimeFormat(
+      "en-CA",
+      {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }
+    );
+
+  const parts =
+    formatter.formatToParts(date);
+
+  const values = {};
+
+  for (const part of parts) {
+    if (part.type !== "literal") {
+      values[part.type] = part.value;
+    }
+  }
+
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+  };
+};
+
+// ========================================
+// MAKE INDIA DATE START
+// ========================================
+
+const makeIndiaDate = (
+  year,
+  month,
+  day,
+  endOfDay = false
+) => {
+  const hour = endOfDay
+    ? "23"
+    : "00";
+
+  const minute = endOfDay
+    ? "59"
+    : "00";
+
+  const second = endOfDay
+    ? "59"
+    : "00";
+
+  const millisecond = endOfDay
+    ? "999"
+    : "000";
+
+  return new Date(
+    `${String(year).padStart(4, "0")}-${String(
+      month
+    ).padStart(2, "0")}-${String(
+      day
+    ).padStart(
+      2,
+      "0"
+    )}T${hour}:${minute}:${second}.${millisecond}+05:30`
+  );
+};
+
+// ========================================
+// PARSE CUSTOM DATE
+// YYYY-MM-DD
+// ========================================
+
+const parseCustomDate = (
+  dateString,
+  endOfDay = false
+) => {
+  if (
+    typeof dateString !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}$/.test(
+      dateString
+    )
+  ) {
+    return null;
+  }
+
+  const [
+    year,
+    month,
+    day,
+  ] = dateString
+    .split("-")
+    .map(Number);
+
+  const date = makeIndiaDate(
+    year,
+    month,
+    day,
+    endOfDay
+  );
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return date;
+};
+
+// ========================================
+// GET TOTAL REVENUE
+//
+// GET /api/bills/revenue
+//
+// Supported:
+//
+// ?period=today
+// ?period=week
+// ?period=month
+// ?period=quarter
+// ?period=year
+// ?period=overall
+//
+// Custom:
+//
+// ?from=2026-10-01&to=2026-10-15
+// ========================================
+
+export const getTotalRevenue = async (
+  req,
+  res
+) => {
   try {
-    const result = await Bill.aggregate([
-      {
-        $match: {
-          paymentStatus: {
-            $ne: "Cancelled",
+    const {
+      period = "overall",
+      from,
+      to,
+    } = req.query;
+
+    const selectedPeriod =
+      String(period || "overall")
+        .trim()
+        .toLowerCase();
+
+    // ========================================
+    // BASE REVENUE FILTER
+    // ========================================
+    //
+    // Your existing overall revenue logic
+    // excludes Cancelled bills.
+    //
+    // Bill model currently uses Paid/Pending,
+    // so this remains compatible with existing
+    // database records.
+    //
+    const match = {
+      paymentStatus: {
+        $ne: "Cancelled",
+      },
+    };
+
+    let startDate = null;
+    let endDate = null;
+
+    // ========================================
+    // CUSTOM DATE RANGE
+    // ========================================
+
+    if (from || to) {
+      if (!from || !to) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Both from and to dates are required",
+        });
+      }
+
+      startDate = parseCustomDate(
+        String(from).trim(),
+        false
+      );
+
+      endDate = parseCustomDate(
+        String(to).trim(),
+        true
+      );
+
+      if (!startDate || !endDate) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid date format. Use YYYY-MM-DD",
+        });
+      }
+
+      if (startDate > endDate) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "From date cannot be greater than To date",
+        });
+      }
+    }
+
+    // ========================================
+    // PREDEFINED PERIOD
+    // ========================================
+
+    if (!from && !to) {
+      const validPeriods = [
+        "today",
+        "week",
+        "month",
+        "quarter",
+        "year",
+        "overall",
+      ];
+
+      if (
+        !validPeriods.includes(
+          selectedPeriod
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid period. Use today, week, month, quarter, year or overall.",
+        });
+      }
+
+      // ======================================
+      // OVERALL
+      // ======================================
+
+      if (
+        selectedPeriod === "overall"
+      ) {
+        // No billDate filter.
+        // All non-cancelled bills are included.
+      } else {
+        const today =
+          getIndiaDateParts();
+
+        // ====================================
+        // TODAY
+        // ====================================
+
+        if (
+          selectedPeriod === "today"
+        ) {
+          startDate = makeIndiaDate(
+            today.year,
+            today.month,
+            today.day,
+            false
+          );
+
+          endDate = makeIndiaDate(
+            today.year,
+            today.month,
+            today.day,
+            true
+          );
+        }
+
+        // ====================================
+        // LAST 7 DAYS
+        // Today + previous 6 days
+        // ====================================
+
+        if (
+          selectedPeriod === "week"
+        ) {
+          const start =
+            new Date(
+              Date.UTC(
+                today.year,
+                today.month - 1,
+                today.day
+              )
+            );
+
+          start.setUTCDate(
+            start.getUTCDate() - 6
+          );
+
+          startDate = makeIndiaDate(
+            start.getUTCFullYear(),
+            start.getUTCMonth() + 1,
+            start.getUTCDate(),
+            false
+          );
+
+          endDate = makeIndiaDate(
+            today.year,
+            today.month,
+            today.day,
+            true
+          );
+        }
+
+        // ====================================
+        // THIS MONTH
+        // ====================================
+
+        if (
+          selectedPeriod === "month"
+        ) {
+          startDate = makeIndiaDate(
+            today.year,
+            today.month,
+            1,
+            false
+          );
+
+          endDate = makeIndiaDate(
+            today.year,
+            today.month,
+            today.day,
+            true
+          );
+        }
+
+        // ====================================
+        // LAST 3 MONTHS
+        // Current month + previous 2 months
+        // ====================================
+
+        if (
+          selectedPeriod === "quarter"
+        ) {
+          const start =
+            new Date(
+              Date.UTC(
+                today.year,
+                today.month - 1,
+                1
+              )
+            );
+
+          start.setUTCMonth(
+            start.getUTCMonth() - 2
+          );
+
+          startDate = makeIndiaDate(
+            start.getUTCFullYear(),
+            start.getUTCMonth() + 1,
+            1,
+            false
+          );
+
+          endDate = makeIndiaDate(
+            today.year,
+            today.month,
+            today.day,
+            true
+          );
+        }
+
+        // ====================================
+        // THIS YEAR
+        // ====================================
+
+        if (
+          selectedPeriod === "year"
+        ) {
+          startDate = makeIndiaDate(
+            today.year,
+            1,
+            1,
+            false
+          );
+
+          endDate = makeIndiaDate(
+            today.year,
+            today.month,
+            today.day,
+            true
+          );
+        }
+
+        // ====================================
+        // APPLY DATE FILTER
+        // ====================================
+
+        match.billDate = {
+          $gte: startDate,
+          $lte: endDate,
+        };
+      }
+    }
+
+    // ========================================
+    // CUSTOM DATE FILTER
+    // ========================================
+
+    if (
+      (from || to) &&
+      startDate &&
+      endDate
+    ) {
+      match.billDate = {
+        $gte: startDate,
+        $lte: endDate,
+      };
+    }
+
+    // ========================================
+    // DATABASE AGGREGATION
+    // ========================================
+
+    const result =
+      await Bill.aggregate([
+        {
+          $match: match,
+        },
+
+        {
+          $group: {
+            _id: null,
+
+            totalRevenue: {
+              $sum: "$grandTotal",
+            },
+
+            totalBills: {
+              $sum: 1,
+            },
           },
         },
-      },
-      {
-        $group: {
-          _id: null,
-          totalRevenue: {
-            $sum: "$grandTotal",
-          },
-          totalBills: {
-            $sum: 1,
-          },
-        },
-      },
-    ]);
+      ]);
+
+    // ========================================
+    // TOTAL REVENUE
+    // ========================================
 
     const totalRevenue =
       result.length > 0
-        ? Number(result[0].totalRevenue || 0)
+        ? Number(
+            result[0].totalRevenue || 0
+          )
         : 0;
+
+    // ========================================
+    // TOTAL BILLS
+    // ========================================
 
     const totalBills =
       result.length > 0
-        ? Number(result[0].totalBills || 0)
+        ? Number(
+            result[0].totalBills || 0
+          )
         : 0;
+
+    // ========================================
+    // RESPONSE
+    // ========================================
 
     return res.status(200).json({
       success: true,
+
+      period:
+        from || to
+          ? "custom"
+          : selectedPeriod,
+
       totalRevenue,
+
       totalBills,
+
+      from: startDate,
+
+      to: endDate,
     });
   } catch (error) {
     console.error(
@@ -1367,9 +1799,15 @@ export const getTotalRevenue = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to calculate total revenue",
+      message:
+        "Failed to calculate total revenue",
+
       totalRevenue: 0,
+
       totalBills: 0,
+
+      error: error.message,
     });
   }
 };
+

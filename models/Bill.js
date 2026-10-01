@@ -1,4 +1,9 @@
+
 import mongoose from "mongoose";
+
+// ========================================
+// BILL ITEM SCHEMA
+// ========================================
 
 const billItemSchema = new mongoose.Schema(
   {
@@ -44,6 +49,10 @@ const billItemSchema = new mongoose.Schema(
   }
 );
 
+// ========================================
+// BILL SCHEMA
+// ========================================
+
 const billSchema = new mongoose.Schema(
   {
     // ========================================
@@ -55,6 +64,7 @@ const billSchema = new mongoose.Schema(
       required: true,
       unique: true,
       index: true,
+      trim: true,
     },
 
     // ========================================
@@ -87,10 +97,15 @@ const billSchema = new mongoose.Schema(
     items: {
       type: [billItemSchema],
       required: true,
+
       validate: {
         validator: function (items) {
-          return items && items.length > 0;
+          return (
+            Array.isArray(items) &&
+            items.length > 0
+          );
         },
+
         message: "At least one service is required",
       },
     },
@@ -129,31 +144,47 @@ const billSchema = new mongoose.Schema(
 
     paymentMethod: {
       type: String,
-      enum: ["Cash", "UPI", "Card", "Other"],
+
+      enum: [
+        "Cash",
+        "UPI",
+        "Card",
+        "Other",
+      ],
+
       default: "Cash",
     },
 
     paymentStatus: {
       type: String,
-      enum: ["Paid", "Pending"],
+
+      enum: [
+        "Paid",
+        "Pending",
+      ],
+
       default: "Paid",
+
+      index: true,
     },
-// ========================================
-// STYLIST / STAFF
-// ========================================
 
-stylist: {
-  type: mongoose.Schema.Types.ObjectId,
-  ref: "Stylist",
-  required: true,
-  index: true,
-},
+    // ========================================
+    // STYLIST / STAFF
+    // ========================================
 
-stylistName: {
-  type: String,
-  required: true,
-  trim: true,
-},
+    stylist: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Stylist",
+      required: true,
+      index: true,
+    },
+
+    stylistName: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
     // ========================================
     // NOTES
     // ========================================
@@ -175,11 +206,46 @@ stylistName: {
       index: true,
     },
   },
+
+  // ========================================
+  // TIMESTAMPS
+  // ========================================
+
   {
     timestamps: true,
   }
 );
 
-const Bill = mongoose.model("Bill", billSchema);
+// ========================================
+// INDEXES
+// ========================================
+
+// Helps revenue/date filtering
+billSchema.index({
+  paymentStatus: 1,
+  billDate: 1,
+});
+
+// Helps client billing history
+billSchema.index({
+  client: 1,
+  billDate: -1,
+});
+
+// Helps stylist billing/revenue queries
+billSchema.index({
+  stylist: 1,
+  billDate: -1,
+});
+
+// ========================================
+// MODEL
+// ========================================
+
+const Bill = mongoose.model(
+  "Bill",
+  billSchema
+);
 
 export default Bill;
+
