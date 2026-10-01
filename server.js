@@ -3,7 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 
 import connectDB from "./config/db.js";
-
+import "./jobs/notificationJob.js";
 // Routes
 import clientRoutes from "./routes/clientRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
@@ -15,7 +15,7 @@ import stylistRoutes from "./routes/stylistRoutes.js";
 import attendanceRoutes from "./routes/attendanceRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import expenseRoutes from "./routes/expenseRoutes.js";
-
+import notificationRoutes from "./routes/notificationRoutes.js";
 dotenv.config();
 
 const app = express();
@@ -86,6 +86,7 @@ app.use(
 );
 
 app.use("/api/expenses", expenseRoutes);
+app.use("/api/notifications", notificationRoutes);
 // ========================================
 // 404 ROUTE
 // ========================================
