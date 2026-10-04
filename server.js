@@ -16,6 +16,9 @@ import attendanceRoutes from "./routes/attendanceRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import expenseRoutes from "./routes/expenseRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
+import salaryRoutes from "./routes/salaryRoutes.js";
+
+
 dotenv.config();
 
 const app = express();
@@ -84,7 +87,7 @@ app.use(
   "/api/products",
   productRoutes
 );
-
+app.use("/api/salaries", salaryRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/notifications", notificationRoutes);
 // ========================================
