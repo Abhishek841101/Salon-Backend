@@ -1,3 +1,4 @@
+
 import express from "express";
 
 import {
@@ -23,7 +24,6 @@ const router = express.Router();
 router.post("/", protectAdmin, createSalary);
 
 // Get all salaries
-// Example:
 // GET /api/salaries?month=2026-10
 // GET /api/salaries?month=2026-10&status=PENDING
 // GET /api/salaries?month=2026-10&search=rahul

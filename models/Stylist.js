@@ -3,6 +3,17 @@ import mongoose from "mongoose";
 const stylistSchema = new mongoose.Schema(
   {
     // ======================================================
+    // SALON
+    // ======================================================
+
+    salonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salon",
+      required: [true, "Salon ID is required"],
+      index: true,
+    },
+
+    // ======================================================
     // BASIC DETAILS
     // ======================================================
 
@@ -109,7 +120,7 @@ const stylistSchema = new mongoose.Schema(
 );
 
 // ======================================================
-// INDEXES
+// SEARCH INDEX
 // ======================================================
 
 stylistSchema.index({
@@ -118,6 +129,10 @@ stylistSchema.index({
   email: "text",
   specialization: "text",
 });
+
+// ======================================================
+// MODEL
+// ======================================================
 
 const Stylist =
   mongoose.models.Stylist ||

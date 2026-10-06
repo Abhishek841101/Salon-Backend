@@ -1,7 +1,18 @@
+
 import mongoose from "mongoose";
 
 const expenseSchema = new mongoose.Schema(
   {
+    // ========================================
+    // TENANT
+    // ========================================
+    salonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salon",
+      required: [true, "Salon ID is required"],
+      index: true,
+    },
+
     // ========================================
     // EXPENSE TITLE
     // ========================================
@@ -47,7 +58,13 @@ const expenseSchema = new mongoose.Schema(
     // ========================================
     paymentMethod: {
       type: String,
-      enum: ["Cash", "UPI", "Card", "Bank Transfer", "Other"],
+      enum: [
+        "Cash",
+        "UPI",
+        "Card",
+        "Bank Transfer",
+        "Other",
+      ],
       default: "Cash",
     },
 
@@ -106,23 +123,34 @@ const expenseSchema = new mongoose.Schema(
 );
 
 // ========================================
-// INDEXES
+// TENANT-SCOPED INDEXES
 // ========================================
 
 expenseSchema.index({
+  salonId: 1,
   expenseDate: -1,
 });
 
 expenseSchema.index({
+  salonId: 1,
   category: 1,
   expenseDate: -1,
 });
 
 expenseSchema.index({
+  salonId: 1,
   active: 1,
   expenseDate: -1,
 });
 
-const Expense = mongoose.model("Expense", expenseSchema);
+expenseSchema.index({
+  salonId: 1,
+  status: 1,
+  expenseDate: -1,
+});
+
+const Expense =
+  mongoose.models.Expense ||
+  mongoose.model("Expense", expenseSchema);
 
 export default Expense;

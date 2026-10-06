@@ -1,5 +1,24 @@
+
 import mongoose from "mongoose";
 import Expense from "../models/Expense.js";
+
+// ========================================
+// HELPERS
+// ========================================
+
+const isValidObjectId = (id) => {
+  return mongoose.Types.ObjectId.isValid(id);
+};
+
+const getSalonId = (req) => {
+  const salonId = req.user?.salonId;
+
+  if (!salonId || !isValidObjectId(salonId)) {
+    return null;
+  }
+
+  return salonId;
+};
 
 // ========================================
 // CREATE EXPENSE
@@ -8,6 +27,15 @@ import Expense from "../models/Expense.js";
 
 export const createExpense = async (req, res) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon access is required",
+      });
+    }
+
     const {
       title,
       category,
@@ -57,20 +85,48 @@ export const createExpense = async (req, res) => {
     }
 
     // ----------------------------------------
+    // DATE VALIDATION
+    // ----------------------------------------
+
+    const finalExpenseDate = expenseDate
+      ? new Date(expenseDate)
+      : new Date();
+
+    if (Number.isNaN(finalExpenseDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid expense date",
+      });
+    }
+
+    // ----------------------------------------
     // CREATE
     // ----------------------------------------
 
     const expense = await Expense.create({
+      salonId,
+
       title: title.trim(),
+
       category,
+
       amount: Number(amount),
-      paymentMethod: paymentMethod || "Cash",
-      paidTo: paidTo?.trim() || "",
-      expenseDate: expenseDate
-        ? new Date(expenseDate)
-        : new Date(),
-      notes: notes?.trim() || "",
-      status: status || "Paid",
+
+      paymentMethod:
+        paymentMethod || "Cash",
+
+      paidTo:
+        paidTo?.trim() || "",
+
+      expenseDate:
+        finalExpenseDate,
+
+      notes:
+        notes?.trim() || "",
+
+      status:
+        status || "Paid",
+
       active: true,
     });
 
@@ -80,7 +136,10 @@ export const createExpense = async (req, res) => {
       expense,
     });
   } catch (error) {
-    console.error("CREATE EXPENSE ERROR:", error);
+    console.error(
+      "CREATE EXPENSE ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -97,6 +156,15 @@ export const createExpense = async (req, res) => {
 
 export const getExpenses = async (req, res) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon access is required",
+      });
+    }
+
     const {
       category,
       status,
@@ -108,14 +176,19 @@ export const getExpenses = async (req, res) => {
       limit = 50,
     } = req.query;
 
-    const filter = {};
+    // IMPORTANT:
+    // Every query starts with salonId.
+    const filter = {
+      salonId,
+    };
 
     // ----------------------------------------
     // ACTIVE FILTER
     // ----------------------------------------
 
     if (active !== undefined) {
-      filter.active = active === "true";
+      filter.active =
+        active === "true";
     } else {
       filter.active = true;
     }
@@ -124,7 +197,10 @@ export const getExpenses = async (req, res) => {
     // CATEGORY
     // ----------------------------------------
 
-    if (category && category !== "All") {
+    if (
+      category &&
+      category !== "All"
+    ) {
       filter.category = category;
     }
 
@@ -132,7 +208,10 @@ export const getExpenses = async (req, res) => {
     // STATUS
     // ----------------------------------------
 
-    if (status && status !== "All") {
+    if (
+      status &&
+      status !== "All"
+    ) {
       filter.status = status;
     }
 
@@ -146,18 +225,40 @@ export const getExpenses = async (req, res) => {
       if (from) {
         const fromDate = new Date(from);
 
-        if (!Number.isNaN(fromDate.getTime())) {
-          fromDate.setHours(0, 0, 0, 0);
-          filter.expenseDate.$gte = fromDate;
+        if (
+          !Number.isNaN(
+            fromDate.getTime()
+          )
+        ) {
+          fromDate.setHours(
+            0,
+            0,
+            0,
+            0
+          );
+
+          filter.expenseDate.$gte =
+            fromDate;
         }
       }
 
       if (to) {
         const toDate = new Date(to);
 
-        if (!Number.isNaN(toDate.getTime())) {
-          toDate.setHours(23, 59, 59, 999);
-          filter.expenseDate.$lte = toDate;
+        if (
+          !Number.isNaN(
+            toDate.getTime()
+          )
+        ) {
+          toDate.setHours(
+            23,
+            59,
+            59,
+            999
+          );
+
+          filter.expenseDate.$lte =
+            toDate;
         }
       }
     }
@@ -166,13 +267,35 @@ export const getExpenses = async (req, res) => {
     // SEARCH
     // ----------------------------------------
 
-    if (search && search.trim()) {
-      const searchRegex = new RegExp(search.trim(), "i");
+    if (
+      search &&
+      search.trim()
+    ) {
+      const searchText =
+        search.trim();
+
+      const escaped =
+        searchText.replace(
+          /[.*+?^${}()|[\]\\]/g,
+          "\\$&"
+        );
+
+      const searchRegex =
+        new RegExp(
+          escaped,
+          "i"
+        );
 
       filter.$or = [
-        { title: searchRegex },
-        { paidTo: searchRegex },
-        { notes: searchRegex },
+        {
+          title: searchRegex,
+        },
+        {
+          paidTo: searchRegex,
+        },
+        {
+          notes: searchRegex,
+        },
       ];
     }
 
@@ -180,23 +303,39 @@ export const getExpenses = async (req, res) => {
     // PAGINATION
     // ----------------------------------------
 
-    const pageNumber = Math.max(Number(page) || 1, 1);
+    const pageNumber = Math.max(
+      Number(page) || 1,
+      1
+    );
+
     const limitNumber = Math.min(
-      Math.max(Number(limit) || 50, 1),
+      Math.max(
+        Number(limit) || 50,
+        1
+      ),
       200
     );
 
-    const skip = (pageNumber - 1) * limitNumber;
+    const skip =
+      (pageNumber - 1) *
+      limitNumber;
 
     // ----------------------------------------
     // FETCH
     // ----------------------------------------
 
-    const [expenses, total] = await Promise.all([
+    const [
+      expenses,
+      total,
+    ] = await Promise.all([
       Expense.find(filter)
-        .sort({ expenseDate: -1, createdAt: -1 })
+        .sort({
+          expenseDate: -1,
+          createdAt: -1,
+        })
         .skip(skip)
-        .limit(limitNumber),
+        .limit(limitNumber)
+        .lean(),
 
       Expense.countDocuments(filter),
     ]);
@@ -205,10 +344,15 @@ export const getExpenses = async (req, res) => {
     // TOTAL AMOUNT
     // ----------------------------------------
 
-    const totalAmount = expenses.reduce(
-      (sum, expense) => sum + Number(expense.amount || 0),
-      0
-    );
+    const totalAmount =
+      expenses.reduce(
+        (sum, expense) =>
+          sum +
+          Number(
+            expense.amount || 0
+          ),
+        0
+      );
 
     return res.status(200).json({
       success: true,
@@ -220,7 +364,10 @@ export const getExpenses = async (req, res) => {
       expenses,
     });
   } catch (error) {
-    console.error("GET EXPENSES ERROR:", error);
+    console.error(
+      "GET EXPENSES ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -235,21 +382,35 @@ export const getExpenses = async (req, res) => {
 // GET /api/expenses/:id
 // ========================================
 
-export const getExpenseById = async (req, res) => {
+export const getExpenseById = async (
+  req,
+  res
+) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon access is required",
+      });
+    }
+
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid expense ID",
       });
     }
 
-    const expense = await Expense.findOne({
-      _id: id,
-      active: true,
-    });
+    const expense =
+      await Expense.findOne({
+        _id: id,
+        salonId,
+        active: true,
+      });
 
     if (!expense) {
       return res.status(404).json({
@@ -263,7 +424,10 @@ export const getExpenseById = async (req, res) => {
       expense,
     });
   } catch (error) {
-    console.error("GET EXPENSE BY ID ERROR:", error);
+    console.error(
+      "GET EXPENSE BY ID ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -278,21 +442,35 @@ export const getExpenseById = async (req, res) => {
 // PATCH /api/expenses/:id
 // ========================================
 
-export const updateExpense = async (req, res) => {
+export const updateExpense = async (
+  req,
+  res
+) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon access is required",
+      });
+    }
+
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid expense ID",
       });
     }
 
-    const existingExpense = await Expense.findOne({
-      _id: id,
-      active: true,
-    });
+    const existingExpense =
+      await Expense.findOne({
+        _id: id,
+        salonId,
+        active: true,
+      });
 
     if (!existingExpense) {
       return res.status(404).json({
@@ -313,77 +491,133 @@ export const updateExpense = async (req, res) => {
     } = req.body;
 
     // ----------------------------------------
-    // UPDATE ONLY PROVIDED VALUES
+    // UPDATE TITLE
     // ----------------------------------------
 
     if (title !== undefined) {
       if (!title.trim()) {
         return res.status(400).json({
           success: false,
-          message: "Expense title cannot be empty",
+          message:
+            "Expense title cannot be empty",
         });
       }
 
-      existingExpense.title = title.trim();
+      existingExpense.title =
+        title.trim();
     }
 
+    // ----------------------------------------
+    // UPDATE CATEGORY
+    // ----------------------------------------
+
     if (category !== undefined) {
-      existingExpense.category = category;
+      existingExpense.category =
+        category;
     }
+
+    // ----------------------------------------
+    // UPDATE AMOUNT
+    // ----------------------------------------
 
     if (amount !== undefined) {
       if (
         amount === "" ||
-        Number.isNaN(Number(amount)) ||
+        Number.isNaN(
+          Number(amount)
+        ) ||
         Number(amount) < 0
       ) {
         return res.status(400).json({
           success: false,
-          message: "Invalid expense amount",
+          message:
+            "Invalid expense amount",
         });
       }
 
-      existingExpense.amount = Number(amount);
+      existingExpense.amount =
+        Number(amount);
     }
 
-    if (paymentMethod !== undefined) {
-      existingExpense.paymentMethod = paymentMethod;
+    // ----------------------------------------
+    // UPDATE PAYMENT METHOD
+    // ----------------------------------------
+
+    if (
+      paymentMethod !== undefined
+    ) {
+      existingExpense.paymentMethod =
+        paymentMethod;
     }
 
-    if (paidTo !== undefined) {
-      existingExpense.paidTo = paidTo.trim();
+    // ----------------------------------------
+    // UPDATE PAID TO
+    // ----------------------------------------
+
+    if (
+      paidTo !== undefined
+    ) {
+      existingExpense.paidTo =
+        paidTo.trim();
     }
 
-    if (expenseDate !== undefined) {
-      const parsedDate = new Date(expenseDate);
+    // ----------------------------------------
+    // UPDATE DATE
+    // ----------------------------------------
 
-      if (Number.isNaN(parsedDate.getTime())) {
+    if (
+      expenseDate !== undefined
+    ) {
+      const parsedDate =
+        new Date(expenseDate);
+
+      if (
+        Number.isNaN(
+          parsedDate.getTime()
+        )
+      ) {
         return res.status(400).json({
           success: false,
-          message: "Invalid expense date",
+          message:
+            "Invalid expense date",
         });
       }
 
-      existingExpense.expenseDate = parsedDate;
+      existingExpense.expenseDate =
+        parsedDate;
     }
+
+    // ----------------------------------------
+    // UPDATE NOTES
+    // ----------------------------------------
 
     if (notes !== undefined) {
-      existingExpense.notes = notes.trim();
+      existingExpense.notes =
+        notes.trim();
     }
 
+    // ----------------------------------------
+    // UPDATE STATUS
+    // ----------------------------------------
+
     if (status !== undefined) {
-      existingExpense.status = status;
+      existingExpense.status =
+        status;
     }
 
     await existingExpense.save();
 
     return res.status(200).json({
       success: true,
-      message: "Expense updated successfully",
+      message:
+        "Expense updated successfully",
       expense: existingExpense,
     });
   } catch (error) {
-    console.error("UPDATE EXPENSE ERROR:", error);
+    console.error(
+      "UPDATE EXPENSE ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -398,21 +632,35 @@ export const updateExpense = async (req, res) => {
 // DELETE /api/expenses/:id
 // ========================================
 
-export const deleteExpense = async (req, res) => {
+export const deleteExpense = async (
+  req,
+  res
+) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon access is required",
+      });
+    }
+
     const { id } = req.params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return res.status(400).json({
         success: false,
         message: "Invalid expense ID",
       });
     }
 
-    const expense = await Expense.findOne({
-      _id: id,
-      active: true,
-    });
+    const expense =
+      await Expense.findOne({
+        _id: id,
+        salonId,
+        active: true,
+      });
 
     if (!expense) {
       return res.status(404).json({
@@ -428,14 +676,19 @@ export const deleteExpense = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Expense deleted successfully",
+      message:
+        "Expense deleted successfully",
     });
   } catch (error) {
-    console.error("DELETE EXPENSE ERROR:", error);
+    console.error(
+      "DELETE EXPENSE ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to delete expense",
+      message:
+        "Failed to delete expense",
       error: error.message,
     });
   }
@@ -446,9 +699,25 @@ export const deleteExpense = async (req, res) => {
 // GET /api/expenses/summary
 // ========================================
 
-export const getExpenseSummary = async (req, res) => {
+export const getExpenseSummary = async (
+  req,
+  res
+) => {
   try {
-    const { period = "month", from, to } = req.query;
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon access is required",
+      });
+    }
+
+    const {
+      period = "month",
+      from,
+      to,
+    } = req.query;
 
     let startDate;
     let endDate;
@@ -458,11 +727,42 @@ export const getExpenseSummary = async (req, res) => {
     // ----------------------------------------
 
     if (from || to) {
-      startDate = from ? new Date(from) : new Date(0);
-      endDate = to ? new Date(to) : new Date();
+      startDate = from
+        ? new Date(from)
+        : new Date(0);
 
-      startDate.setHours(0, 0, 0, 0);
-      endDate.setHours(23, 59, 59, 999);
+      endDate = to
+        ? new Date(to)
+        : new Date();
+
+      if (
+        Number.isNaN(
+          startDate.getTime()
+        ) ||
+        Number.isNaN(
+          endDate.getTime()
+        )
+      ) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Invalid date range",
+        });
+      }
+
+      startDate.setHours(
+        0,
+        0,
+        0,
+        0
+      );
+
+      endDate.setHours(
+        23,
+        59,
+        59,
+        999
+      );
     } else {
       // ----------------------------------------
       // PREDEFINED PERIODS
@@ -471,29 +771,67 @@ export const getExpenseSummary = async (req, res) => {
       const now = new Date();
 
       endDate = new Date(now);
-      endDate.setHours(23, 59, 59, 999);
+
+      endDate.setHours(
+        23,
+        59,
+        59,
+        999
+      );
 
       startDate = new Date(now);
 
       if (period === "today") {
-        startDate.setHours(0, 0, 0, 0);
-      } else if (period === "7days" || period === "7") {
-        startDate.setDate(startDate.getDate() - 6);
-        startDate.setHours(0, 0, 0, 0);
-      } else if (period === "month") {
+        startDate.setHours(
+          0,
+          0,
+          0,
+          0
+        );
+      } else if (
+        period === "7days" ||
+        period === "7"
+      ) {
+        startDate.setDate(
+          startDate.getDate() - 6
+        );
+
+        startDate.setHours(
+          0,
+          0,
+          0,
+          0
+        );
+      } else if (
+        period === "month"
+      ) {
         startDate = new Date(
           now.getFullYear(),
           now.getMonth(),
           1
         );
-        startDate.setHours(0, 0, 0, 0);
-      } else if (period === "year") {
+
+        startDate.setHours(
+          0,
+          0,
+          0,
+          0
+        );
+      } else if (
+        period === "year"
+      ) {
         startDate = new Date(
           now.getFullYear(),
           0,
           1
         );
-        startDate.setHours(0, 0, 0, 0);
+
+        startDate.setHours(
+          0,
+          0,
+          0,
+          0
+        );
       } else {
         return res.status(400).json({
           success: false,
@@ -507,7 +845,11 @@ export const getExpenseSummary = async (req, res) => {
     // AGGREGATION
     // ----------------------------------------
 
+    // IMPORTANT:
+    // salonId is part of the match for
+    // every aggregation.
     const match = {
+      salonId,
       active: true,
       expenseDate: {
         $gte: startDate,
@@ -515,116 +857,190 @@ export const getExpenseSummary = async (req, res) => {
       },
     };
 
-    const [summary, categorySummary, paymentSummary] =
-      await Promise.all([
-        Expense.aggregate([
-          { $match: match },
-          {
-            $group: {
-              _id: null,
-              totalExpense: {
-                $sum: "$amount",
-              },
-              totalExpenses: {
-                $sum: 1,
-              },
-              paidExpense: {
-                $sum: {
-                  $cond: [
-                    { $eq: ["$status", "Paid"] },
-                    "$amount",
-                    0,
-                  ],
-                },
-              },
-              pendingExpense: {
-                $sum: {
-                  $cond: [
-                    { $eq: ["$status", "Pending"] },
-                    "$amount",
-                    0,
-                  ],
-                },
-              },
-            },
-          },
-        ]),
+    const [
+      summary,
+      categorySummary,
+      paymentSummary,
+    ] = await Promise.all([
+      Expense.aggregate([
+        {
+          $match: match,
+        },
+        {
+          $group: {
+            _id: null,
 
-        Expense.aggregate([
-          { $match: match },
-          {
-            $group: {
-              _id: "$category",
-              total: { $sum: "$amount" },
-              count: { $sum: 1 },
+            totalExpense: {
+              $sum: "$amount",
             },
-          },
-          {
-            $sort: {
-              total: -1,
-            },
-          },
-        ]),
 
-        Expense.aggregate([
-          { $match: match },
-          {
-            $group: {
-              _id: "$paymentMethod",
-              total: { $sum: "$amount" },
-              count: { $sum: 1 },
+            totalExpenses: {
+              $sum: 1,
             },
-          },
-          {
-            $sort: {
-              total: -1,
-            },
-          },
-        ]),
-      ]);
 
-    const result = summary[0] || {
-      totalExpense: 0,
-      totalExpenses: 0,
-      paidExpense: 0,
-      pendingExpense: 0,
-    };
+            paidExpense: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$status",
+                      "Paid",
+                    ],
+                  },
+                  "$amount",
+                  0,
+                ],
+              },
+            },
+
+            pendingExpense: {
+              $sum: {
+                $cond: [
+                  {
+                    $eq: [
+                      "$status",
+                      "Pending",
+                    ],
+                  },
+                  "$amount",
+                  0,
+                ],
+              },
+            },
+          },
+        },
+      ]),
+
+      Expense.aggregate([
+        {
+          $match: match,
+        },
+        {
+          $group: {
+            _id: "$category",
+            total: {
+              $sum: "$amount",
+            },
+            count: {
+              $sum: 1,
+            },
+          },
+        },
+        {
+          $sort: {
+            total: -1,
+          },
+        },
+      ]),
+
+      Expense.aggregate([
+        {
+          $match: match,
+        },
+        {
+          $group: {
+            _id: "$paymentMethod",
+            total: {
+              $sum: "$amount",
+            },
+            count: {
+              $sum: 1,
+            },
+          },
+        },
+        {
+          $sort: {
+            total: -1,
+          },
+        },
+      ]),
+    ]);
+
+    const result =
+      summary[0] || {
+        totalExpense: 0,
+        totalExpenses: 0,
+        paidExpense: 0,
+        pendingExpense: 0,
+      };
 
     return res.status(200).json({
       success: true,
 
       period,
 
-      from: startDate.toISOString(),
+      from:
+        startDate.toISOString(),
 
-      to: endDate.toISOString(),
+      to:
+        endDate.toISOString(),
 
-      totalExpense: Number(result.totalExpense || 0),
+      totalExpense:
+        Number(
+          result.totalExpense || 0
+        ),
 
-      totalExpenses: Number(result.totalExpenses || 0),
+      totalExpenses:
+        Number(
+          result.totalExpenses || 0
+        ),
 
-      paidExpense: Number(result.paidExpense || 0),
+      paidExpense:
+        Number(
+          result.paidExpense || 0
+        ),
 
-      pendingExpense: Number(result.pendingExpense || 0),
+      pendingExpense:
+        Number(
+          result.pendingExpense || 0
+        ),
 
-      byCategory: categorySummary.map((item) => ({
-        category: item._id,
-        total: Number(item.total || 0),
-        count: Number(item.count || 0),
-      })),
+      byCategory:
+        categorySummary.map(
+          (item) => ({
+            category:
+              item._id,
 
-      byPaymentMethod: paymentSummary.map((item) => ({
-        paymentMethod: item._id,
-        total: Number(item.total || 0),
-        count: Number(item.count || 0),
-      })),
+            total:
+              Number(
+                item.total || 0
+              ),
+
+            count:
+              Number(
+                item.count || 0
+              ),
+          })
+        ),
+
+      byPaymentMethod:
+        paymentSummary.map(
+          (item) => ({
+            paymentMethod:
+              item._id,
+
+            total:
+              Number(
+                item.total || 0
+              ),
+
+            count:
+              Number(
+                item.count || 0
+              ),
+          })
+        ),
     });
   } catch (error) {
-    console.error("EXPENSE SUMMARY ERROR:", error);
+    console.error(
+      "EXPENSE SUMMARY ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to get expense summary",
+      message:
+        "Failed to get expense summary",
       error: error.message,
     });
   }

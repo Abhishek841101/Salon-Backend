@@ -1,3 +1,4 @@
+
 import express from "express";
 
 import {
@@ -5,12 +6,30 @@ import {
   getRecentBills,
 } from "../controllers/dashboardController.js";
 
+import { protectAdmin } from "../middleware/authMiddleware.js";
+
 const router = express.Router();
 
-// Dashboard summary
-router.get("/summary", getDashboardSummary);
+// ========================================
+// DASHBOARD SUMMARY
+// GET /api/dashboard/summary
+// ========================================
 
-// Recent bills
-router.get("/recent-bills", getRecentBills);
+router.get(
+  "/summary",
+  protectAdmin,
+  getDashboardSummary
+);
+
+// ========================================
+// RECENT BILLS
+// GET /api/dashboard/recent-bills
+// ========================================
+
+router.get(
+  "/recent-bills",
+  protectAdmin,
+  getRecentBills
+);
 
 export default router;

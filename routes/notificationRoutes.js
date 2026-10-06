@@ -8,21 +8,23 @@ import {
   generateUpcomingNotifications,
 } from "../controllers/notificationController.js";
 
+import { protectAdmin } from "../middleware/authMiddleware.js";
+
 const router = express.Router();
 
 // Get all notifications
-router.get("/", getNotifications);
+router.get("/", protectAdmin, getNotifications);
 
 // Get only unread notifications
-router.get("/unread", getUnreadNotifications);
+router.get("/unread", protectAdmin, getUnreadNotifications);
 
 // Generate birthday / anniversary notifications
-router.post("/generate", generateUpcomingNotifications);
+router.post("/generate", protectAdmin, generateUpcomingNotifications);
 
 // Mark all notifications as read
-router.patch("/read-all", markAllNotificationsAsRead);
+router.patch("/read-all", protectAdmin, markAllNotificationsAsRead);
 
 // Mark single notification as read
-router.patch("/:id/read", markNotificationAsRead);
+router.patch("/:id/read", protectAdmin, markNotificationAsRead);
 
 export default router;

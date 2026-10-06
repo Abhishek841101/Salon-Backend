@@ -1,7 +1,23 @@
+
 import mongoose from "mongoose";
 
 const salarySchema = new mongoose.Schema(
   {
+    // ============================================
+    // TENANT
+    // ============================================
+
+    salonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salon",
+      required: [true, "Salon ID is required"],
+      index: true,
+    },
+
+    // ============================================
+    // STYLIST
+    // ============================================
+
     stylist: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Stylist",
@@ -115,9 +131,15 @@ const salarySchema = new mongoose.Schema(
   }
 );
 
+// ============================================
+// TENANT-SCOPED INDEXES
+// ============================================
+
 // One salary record per stylist per month
+// INSIDE ONE SALON.
 salarySchema.index(
   {
+    salonId: 1,
     stylist: 1,
     month: 1,
   },
@@ -125,6 +147,18 @@ salarySchema.index(
     unique: true,
   }
 );
+
+salarySchema.index({
+  salonId: 1,
+  month: 1,
+  paymentStatus: 1,
+});
+
+salarySchema.index({
+  salonId: 1,
+  stylist: 1,
+  month: -1,
+});
 
 const Salary =
   mongoose.models.Salary ||

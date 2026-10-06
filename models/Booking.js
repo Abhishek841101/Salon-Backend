@@ -1,7 +1,19 @@
+
 import mongoose from "mongoose";
 
 const bookingSchema = new mongoose.Schema(
   {
+    // ==========================================
+    // SALON
+    // ==========================================
+
+    salonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salon",
+      required: [true, "Salon ID is required"],
+      index: true,
+    },
+
     // ==========================================
     // CLIENT
     // ==========================================
@@ -71,9 +83,6 @@ const bookingSchema = new mongoose.Schema(
 
     // ==========================================
     // PRICE SNAPSHOT
-    // Important:
-    // Future service price changes should not
-    // change old booking price.
     // ==========================================
 
     price: {
@@ -134,9 +143,6 @@ const bookingSchema = new mongoose.Schema(
 
     // ==========================================
     // BILL REFERENCE
-    //
-    // Bill will be generated only after
-    // booking becomes COMPLETED.
     // ==========================================
 
     bill: {
@@ -151,32 +157,35 @@ const bookingSchema = new mongoose.Schema(
 );
 
 // ==========================================
-// INDEXES
+// TENANT-AWARE INDEXES
 // ==========================================
 
 bookingSchema.index({
+  salonId: 1,
   bookingDate: 1,
   status: 1,
 });
 
 bookingSchema.index({
+  salonId: 1,
   client: 1,
   bookingDate: -1,
 });
 
 bookingSchema.index({
+  salonId: 1,
   service: 1,
   bookingDate: -1,
 });
 
 bookingSchema.index({
+  salonId: 1,
   stylist: 1,
   bookingDate: 1,
 });
 
-const Booking = mongoose.model(
-  "Booking",
-  bookingSchema
-);
+const Booking =
+  mongoose.models.Booking ||
+  mongoose.model("Booking", bookingSchema);
 
 export default Booking;

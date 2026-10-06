@@ -1,7 +1,23 @@
+
 import mongoose from "mongoose";
 
 const serviceSchema = new mongoose.Schema(
   {
+    // ========================================
+    // SALON
+    // ========================================
+
+    salonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salon",
+      required: [true, "Salon ID is required"],
+      index: true,
+    },
+
+    // ========================================
+    // BASIC DETAILS
+    // ========================================
+
     name: {
       type: String,
       required: [true, "Service name is required"],
@@ -51,12 +67,15 @@ const serviceSchema = new mongoose.Schema(
       },
     },
 
+    // ========================================
+    // STATUS
+    // ========================================
+
     isActive: {
       type: Boolean,
       default: true,
     },
   },
-
   {
     timestamps: true,
   }
@@ -78,9 +97,5 @@ serviceSchema.index({
 const Service =
   mongoose.models.Service ||
   mongoose.model("Service", serviceSchema);
-
-// ========================================
-// DEFAULT EXPORT
-// ========================================
 
 export default Service;

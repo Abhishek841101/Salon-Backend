@@ -1,3 +1,4 @@
+
 import express from "express";
 
 import {
@@ -10,22 +11,88 @@ import {
   deleteService,
 } from "../controllers/serviceController.js";
 
+import {
+  protectAdmin,
+} from "../middleware/authMiddleware.js";
+
 import upload from "../middleware/upload.js";
 
 const router = express.Router();
 
-router.post("/", upload.single("image"), createService);
+// ========================================
+// ALL SERVICE ROUTES REQUIRE ADMIN LOGIN
+// ========================================
 
-router.get("/", getServices);
+// ========================================
+// ADD SERVICE
+// ========================================
 
-router.get("/:id", getServiceById);
+router.post(
+  "/",
+  protectAdmin,
+  upload.single("image"),
+  createService
+);
 
-router.put("/:id", upload.single("image"), updateService);
+// ========================================
+// GET ALL SERVICES / SEARCH
+// ========================================
 
-router.patch("/:id/deactivate", deactivateService);
+router.get(
+  "/",
+  protectAdmin,
+  getServices
+);
 
-router.patch("/:id/reactivate", reactivateService);
+// ========================================
+// GET SINGLE SERVICE
+// ========================================
 
-router.delete("/:id", deleteService);
+router.get(
+  "/:id",
+  protectAdmin,
+  getServiceById
+);
+
+// ========================================
+// UPDATE SERVICE
+// ========================================
+
+router.put(
+  "/:id",
+  protectAdmin,
+  upload.single("image"),
+  updateService
+);
+
+// ========================================
+// DEACTIVATE SERVICE
+// ========================================
+
+router.patch(
+  "/:id/deactivate",
+  protectAdmin,
+  deactivateService
+);
+
+// ========================================
+// REACTIVATE SERVICE
+// ========================================
+
+router.patch(
+  "/:id/reactivate",
+  protectAdmin,
+  reactivateService
+);
+
+// ========================================
+// DELETE SERVICE
+// ========================================
+
+router.delete(
+  "/:id",
+  protectAdmin,
+  deleteService
+);
 
 export default router;

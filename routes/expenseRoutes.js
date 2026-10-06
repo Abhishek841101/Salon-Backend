@@ -1,3 +1,4 @@
+
 import express from "express";
 
 import {
@@ -9,6 +10,8 @@ import {
   getExpenseSummary,
 } from "../controllers/expenseController.js";
 
+import { protectAdmin } from "../middleware/authMiddleware.js";
+
 const router = express.Router();
 
 // ========================================
@@ -16,7 +19,11 @@ const router = express.Router();
 // POST /api/expenses
 // ========================================
 
-router.post("/", createExpense);
+router.post(
+  "/",
+  protectAdmin,
+  createExpense
+);
 
 // ========================================
 // EXPENSE SUMMARY
@@ -29,34 +36,54 @@ router.post("/", createExpense);
 // /api/expenses/summary?period=year
 // ========================================
 
-router.get("/summary", getExpenseSummary);
+router.get(
+  "/summary",
+  protectAdmin,
+  getExpenseSummary
+);
 
 // ========================================
 // GET ALL EXPENSES
 // GET /api/expenses
 // ========================================
 
-router.get("/", getExpenses);
+router.get(
+  "/",
+  protectAdmin,
+  getExpenses
+);
 
 // ========================================
 // GET SINGLE EXPENSE
 // GET /api/expenses/:id
 // ========================================
 
-router.get("/:id", getExpenseById);
+router.get(
+  "/:id",
+  protectAdmin,
+  getExpenseById
+);
 
 // ========================================
 // UPDATE EXPENSE
 // PATCH /api/expenses/:id
 // ========================================
 
-router.patch("/:id", updateExpense);
+router.patch(
+  "/:id",
+  protectAdmin,
+  updateExpense
+);
 
 // ========================================
 // DELETE EXPENSE
 // DELETE /api/expenses/:id
 // ========================================
 
-router.delete("/:id", deleteExpense);
+router.delete(
+  "/:id",
+  protectAdmin,
+  deleteExpense
+);
 
 export default router;

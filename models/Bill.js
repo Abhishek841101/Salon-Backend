@@ -56,6 +56,17 @@ const billItemSchema = new mongoose.Schema(
 const billSchema = new mongoose.Schema(
   {
     // ========================================
+    // SALON
+    // ========================================
+
+    salonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salon",
+      required: [true, "Salon ID is required"],
+      index: true,
+    },
+
+    // ========================================
     // INVOICE NUMBER
     // ========================================
 
@@ -106,7 +117,8 @@ const billSchema = new mongoose.Schema(
           );
         },
 
-        message: "At least one service is required",
+        message:
+          "At least one service is required",
       },
     },
 
@@ -207,45 +219,35 @@ const billSchema = new mongoose.Schema(
     },
   },
 
-  // ========================================
-  // TIMESTAMPS
-  // ========================================
-
   {
     timestamps: true,
   }
 );
 
 // ========================================
-// INDEXES
+// TENANT-AWARE INDEXES
 // ========================================
 
-// Helps revenue/date filtering
 billSchema.index({
+  salonId: 1,
   paymentStatus: 1,
   billDate: 1,
 });
 
-// Helps client billing history
 billSchema.index({
+  salonId: 1,
   client: 1,
   billDate: -1,
 });
 
-// Helps stylist billing/revenue queries
 billSchema.index({
+  salonId: 1,
   stylist: 1,
   billDate: -1,
 });
 
-// ========================================
-// MODEL
-// ========================================
-
-const Bill = mongoose.model(
-  "Bill",
-  billSchema
-);
+const Bill =
+  mongoose.models.Bill ||
+  mongoose.model("Bill", billSchema);
 
 export default Bill;
-

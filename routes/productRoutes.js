@@ -1,3 +1,4 @@
+
 import express from "express";
 
 import {
@@ -9,6 +10,8 @@ import {
   getProductSummary,
 } from "../controllers/productController.js";
 
+import { protectAdmin } from "../middleware/authMiddleware.js";
+
 const router = express.Router();
 
 // ============================================================
@@ -18,6 +21,7 @@ const router = express.Router();
 
 router.get(
   "/summary",
+  protectAdmin,
   getProductSummary
 );
 
@@ -28,24 +32,18 @@ router.get(
 
 router.post(
   "/",
+  protectAdmin,
   createProduct
 );
 
 // ============================================================
 // GET ALL PRODUCTS
 // GET /api/products
-//
-// Optional:
-// ?search=shampoo
-// ?category=Hair Care
-// ?status=low_stock
-// ?status=out_of_stock
-// ?status=in_stock
-// ?active=true
 // ============================================================
 
 router.get(
   "/",
+  protectAdmin,
   getProducts
 );
 
@@ -56,6 +54,7 @@ router.get(
 
 router.get(
   "/:id",
+  protectAdmin,
   getProductById
 );
 
@@ -66,6 +65,7 @@ router.get(
 
 router.patch(
   "/:id",
+  protectAdmin,
   updateProduct
 );
 
@@ -76,6 +76,7 @@ router.patch(
 
 router.delete(
   "/:id",
+  protectAdmin,
   deleteProduct
 );
 

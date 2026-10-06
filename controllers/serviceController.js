@@ -1,30 +1,57 @@
+
 import Service from "../models/Service.js";
 import cloudinary from "../config/cloudinary.js";
 
-// ========================================
-// CLOUDINARY DELETE HELPER
-// ========================================
+/* =========================================================
+   HELPERS
+========================================================= */
+
+const getSalonId = (req) => {
+  return req.user?.salonId || null;
+};
+
+const validateSalonAccess = (req, res) => {
+  const salonId = getSalonId(req);
+
+  if (!salonId) {
+    res.status(403).json({
+      success: false,
+      message: "Salon access is required",
+    });
+
+    return null;
+  }
+
+  return salonId;
+};
 
 const deleteCloudinaryImage = async (publicId) => {
   if (!publicId) return;
 
   try {
     await cloudinary.uploader.destroy(publicId);
-    console.log("CLOUDINARY IMAGE DELETED:", publicId);
+    console.log("Cloudinary image deleted:", publicId);
   } catch (error) {
     console.error(
-      "CLOUDINARY DELETE ERROR:",
-      error.message
+      "Cloudinary image delete error:",
+      error?.message || error
     );
   }
 };
 
-// ========================================
-// ADD SERVICE
-// ========================================
+/* =========================================================
+   CREATE SERVICE
+   POST /api/services
+========================================================= */
 
 export const createService = async (req, res) => {
+  let uploadedPublicId = null;
+
   try {
+    const salonId = validateSalonAccess(req, res);
+
+    if (!salonId) return;
+
     const {
       name,
       category,
@@ -33,6 +60,10 @@ export const createService = async (req, res) => {
       description,
     } = req.body;
 
+    /* -----------------------------
+       VALIDATION
+    ----------------------------- */
+
     if (!name || !name.trim()) {
       return res.status(400).json({
         success: false,
@@ -40,7 +71,7 @@ export const createService = async (req, res) => {
       });
     }
 
-    if (price === undefined || price === "") {
+    if (price === undefined || price === null || price === "") {
       return res.status(400).json({
         success: false,
         message: "Service price is required",
@@ -49,34 +80,33 @@ export const createService = async (req, res) => {
 
     const numericPrice = Number(price);
 
+    if (Number.isNaN(numericPrice) || numericPrice < 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Service price must be a valid non-negative number",
+      });
+    }
+
     const numericDuration =
-      duration === undefined || duration === ""
+      duration === undefined ||
+      duration === null ||
+      duration === ""
         ? 30
         : Number(duration);
 
     if (
-      Number.isNaN(numericPrice) ||
-      numericPrice < 0
-    ) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid service price",
-      });
-    }
-
-    if (
       Number.isNaN(numericDuration) ||
-      numericDuration < 1
+      numericDuration <= 0
     ) {
       return res.status(400).json({
         success: false,
-        message: "Invalid service duration",
+        message: "Service duration must be greater than 0",
       });
     }
 
-    // ========================================
-    // IMAGE
-    // ========================================
+    /* -----------------------------
+       IMAGE
+    ----------------------------- */
 
     let image = {
       url: "",
@@ -84,33 +114,36 @@ export const createService = async (req, res) => {
     };
 
     if (req.file) {
-      console.log(
-        "SERVICE IMAGE UPLOADED:",
-        req.file.path
-      );
-
       image = {
-        url: req.file.path,
-        publicId: req.file.filename,
+        url: req.file.path || "",
+        publicId: req.file.filename || "",
       };
+
+      uploadedPublicId = req.file.filename || null;
     }
 
-    // ========================================
-    // CREATE SERVICE
-    // ========================================
+    /* -----------------------------
+       CREATE
+    ----------------------------- */
 
     const service = await Service.create({
+      salonId,
+
       name: name.trim(),
 
       category:
-        category?.trim() || "",
+        typeof category === "string"
+          ? category.trim()
+          : "",
 
       price: numericPrice,
 
       duration: numericDuration,
 
       description:
-        description?.trim() || "",
+        typeof description === "string"
+          ? description.trim()
+          : "",
 
       image,
 
@@ -119,21 +152,25 @@ export const createService = async (req, res) => {
 
     return res.status(201).json({
       success: true,
-      message: "Service added successfully",
+      message: "Service created successfully",
       service,
     });
   } catch (error) {
-    console.error(
-      "CREATE SERVICE ERROR:",
-      error
-    );
+    console.error("CREATE SERVICE ERROR:", error);
 
-    // If DB creation fails after image upload,
-    // remove uploaded Cloudinary image.
-    if (req.file?.filename) {
-      await deleteCloudinaryImage(
-        req.file.filename
-      );
+    /* -----------------------------
+       CLEANUP UPLOADED IMAGE
+    ----------------------------- */
+
+    if (uploadedPublicId) {
+      await deleteCloudinaryImage(uploadedPublicId);
+    }
+
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Service already exists",
+      });
     }
 
     return res.status(500).json({
@@ -144,106 +181,131 @@ export const createService = async (req, res) => {
   }
 };
 
-// ========================================
-// GET ALL SERVICES
-// ========================================
+/* =========================================================
+   GET ALL SERVICES
+   GET /api/services
+========================================================= */
 
 export const getServices = async (req, res) => {
   try {
+    const salonId = validateSalonAccess(req, res);
+
+    if (!salonId) return;
+
     const {
-      search = "",
+      search,
+      category,
+      isActive,
       page = 1,
-      limit = 20,
-      status = "active",
+      limit = 50,
     } = req.query;
 
-    const currentPage = Math.max(
-      Number(page) || 1,
-      1
-    );
+    /* -----------------------------
+       TENANT FILTER
+    ----------------------------- */
 
-    const perPage = Math.min(
-      Math.max(Number(limit) || 20, 1),
-      100
-    );
+    const query = {
+      salonId,
+    };
 
-    const query = {};
-
-    // ========================================
-    // STATUS FILTER
-    // ========================================
-
-    if (status === "active") {
-      query.isActive = true;
-    } else if (status === "inactive") {
-      query.isActive = false;
-    }
-
-    // ========================================
-    // SEARCH
-    // ========================================
+    /* -----------------------------
+       ACTIVE / INACTIVE FILTER
+    ----------------------------- */
 
     if (
-      typeof search === "string" &&
-      search.trim()
+      isActive !== undefined &&
+      isActive !== ""
     ) {
-      const searchText = search.trim();
+      query.isActive =
+        String(isActive).toLowerCase() === "true";
+    }
+
+    /* -----------------------------
+       CATEGORY FILTER
+    ----------------------------- */
+
+    if (
+      category &&
+      String(category).trim()
+    ) {
+      query.category = String(category).trim();
+    }
+
+    /* -----------------------------
+       SEARCH
+    ----------------------------- */
+
+    if (
+      search &&
+      String(search).trim()
+    ) {
+      const searchValue = String(search).trim();
 
       query.$or = [
         {
           name: {
-            $regex: searchText,
+            $regex: searchValue,
             $options: "i",
           },
         },
         {
           category: {
-            $regex: searchText,
+            $regex: searchValue,
+            $options: "i",
+          },
+        },
+        {
+          description: {
+            $regex: searchValue,
             $options: "i",
           },
         },
       ];
     }
 
+    /* -----------------------------
+       PAGINATION
+    ----------------------------- */
+
+    const pageNumber =
+      Math.max(Number(page) || 1, 1);
+
+    const limitNumber =
+      Math.min(
+        Math.max(Number(limit) || 50, 1),
+        100
+      );
+
     const skip =
-      (currentPage - 1) * perPage;
+      (pageNumber - 1) * limitNumber;
 
-    const [services, total] =
-      await Promise.all([
-        Service.find(query)
-          .sort({ createdAt: -1 })
-          .skip(skip)
-          .limit(perPage),
+    const [
+      services,
+      total,
+    ] = await Promise.all([
+      Service.find(query)
+        .sort({
+          createdAt: -1,
+        })
+        .skip(skip)
+        .limit(limitNumber),
 
-        Service.countDocuments(query),
-      ]);
-
-    const totalPages =
-      Math.ceil(total / perPage);
+      Service.countDocuments(query),
+    ]);
 
     return res.status(200).json({
       success: true,
+      count: services.length,
+      total,
+      page: pageNumber,
+      limit: limitNumber,
+      totalPages:
+        Math.ceil(total / limitNumber),
 
       services,
-
-      pagination: {
-        total,
-        page: currentPage,
-        limit: perPage,
-        totalPages,
-
-        hasNextPage:
-          currentPage < totalPages,
-
-        hasPreviousPage:
-          currentPage > 1,
-      },
     });
   } catch (error) {
-    console.error(
-      "GET SERVICES ERROR:",
-      error
-    );
+    console.error("GET SERVICES ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -253,19 +315,23 @@ export const getServices = async (req, res) => {
   }
 };
 
-// ========================================
-// GET SINGLE SERVICE
-// ========================================
+/* =========================================================
+   GET SERVICE BY ID
+   GET /api/services/:id
+========================================================= */
 
-export const getServiceById = async (
-  req,
-  res
-) => {
+export const getServiceById = async (req, res) => {
   try {
+    const salonId = validateSalonAccess(req, res);
+
+    if (!salonId) return;
+
     const { id } = req.params;
 
-    const service =
-      await Service.findById(id);
+    const service = await Service.findOne({
+      _id: id,
+      salonId,
+    });
 
     if (!service) {
       return res.status(404).json({
@@ -280,7 +346,7 @@ export const getServiceById = async (
     });
   } catch (error) {
     console.error(
-      "GET SERVICE ERROR:",
+      "GET SERVICE BY ID ERROR:",
       error
     );
 
@@ -292,26 +358,20 @@ export const getServiceById = async (
   }
 };
 
-// ========================================
-// UPDATE SERVICE
-// ========================================
+/* =========================================================
+   UPDATE SERVICE
+   PUT /api/services/:id
+========================================================= */
 
-export const updateService = async (
-  req,
-  res
-) => {
+export const updateService = async (req, res) => {
+  let uploadedPublicId = null;
+
   try {
+    const salonId = validateSalonAccess(req, res);
+
+    if (!salonId) return;
+
     const { id } = req.params;
-
-    const service =
-      await Service.findById(id);
-
-    if (!service) {
-      return res.status(404).json({
-        success: false,
-        message: "Service not found",
-      });
-    }
 
     const {
       name,
@@ -322,39 +382,58 @@ export const updateService = async (
       isActive,
     } = req.body;
 
-    // ========================================
-    // NAME
-    // ========================================
+    /* -----------------------------
+       FIND ONLY WITHIN SALON
+    ----------------------------- */
+
+    const service = await Service.findOne({
+      _id: id,
+      salonId,
+    });
+
+    if (!service) {
+      return res.status(404).json({
+        success: false,
+        message: "Service not found",
+      });
+    }
+
+    /* -----------------------------
+       NAME
+    ----------------------------- */
 
     if (name !== undefined) {
       if (
-        typeof name !== "string" ||
-        !name.trim()
+        !String(name).trim()
       ) {
         return res.status(400).json({
           success: false,
-          message:
-            "Service name cannot be empty",
+          message: "Service name cannot be empty",
         });
       }
 
-      service.name = name.trim();
+      service.name =
+        String(name).trim();
     }
 
-    // ========================================
-    // CATEGORY
-    // ========================================
+    /* -----------------------------
+       CATEGORY
+    ----------------------------- */
 
     if (category !== undefined) {
       service.category =
         String(category).trim();
     }
 
-    // ========================================
-    // PRICE
-    // ========================================
+    /* -----------------------------
+       PRICE
+    ----------------------------- */
 
-    if (price !== undefined) {
+    if (
+      price !== undefined &&
+      price !== null &&
+      price !== ""
+    ) {
       const numericPrice =
         Number(price);
 
@@ -364,29 +443,35 @@ export const updateService = async (
       ) {
         return res.status(400).json({
           success: false,
-          message: "Invalid service price",
+          message:
+            "Service price must be a valid non-negative number",
         });
       }
 
-      service.price = numericPrice;
+      service.price =
+        numericPrice;
     }
 
-    // ========================================
-    // DURATION
-    // ========================================
+    /* -----------------------------
+       DURATION
+    ----------------------------- */
 
-    if (duration !== undefined) {
+    if (
+      duration !== undefined &&
+      duration !== null &&
+      duration !== ""
+    ) {
       const numericDuration =
         Number(duration);
 
       if (
         Number.isNaN(numericDuration) ||
-        numericDuration < 1
+        numericDuration <= 0
       ) {
         return res.status(400).json({
           success: false,
           message:
-            "Invalid service duration",
+            "Service duration must be greater than 0",
         });
       }
 
@@ -394,56 +479,69 @@ export const updateService = async (
         numericDuration;
     }
 
-    // ========================================
-    // DESCRIPTION
-    // ========================================
+    /* -----------------------------
+       DESCRIPTION
+    ----------------------------- */
 
     if (description !== undefined) {
       service.description =
         String(description).trim();
     }
 
-    // ========================================
-    // ACTIVE STATUS
-    // ========================================
+    /* -----------------------------
+       ACTIVE STATUS
+    ----------------------------- */
 
     if (isActive !== undefined) {
       if (
-        isActive === true ||
-        isActive === "true"
+        typeof isActive === "boolean"
       ) {
-        service.isActive = true;
-      }
-
-      if (
-        isActive === false ||
-        isActive === "false"
-      ) {
-        service.isActive = false;
+        service.isActive =
+          isActive;
+      } else {
+        service.isActive =
+          String(isActive).toLowerCase() ===
+          "true";
       }
     }
 
-    // ========================================
-    // NEW IMAGE
-    // ========================================
+    /* -----------------------------
+       NEW IMAGE
+    ----------------------------- */
 
     if (req.file) {
       const oldPublicId =
-        service.image?.publicId;
+        service.image?.publicId || "";
 
       service.image = {
-        url: req.file.path,
-        publicId: req.file.filename,
+        url: req.file.path || "",
+        publicId: req.file.filename || "",
       };
 
-      if (oldPublicId) {
+      uploadedPublicId =
+        req.file.filename || null;
+
+      /* -----------------------------
+         SAVE FIRST
+      ----------------------------- */
+
+      await service.save();
+
+      /* -----------------------------
+         DELETE OLD IMAGE
+      ----------------------------- */
+
+      if (
+        oldPublicId &&
+        oldPublicId !== uploadedPublicId
+      ) {
         await deleteCloudinaryImage(
           oldPublicId
         );
       }
+    } else {
+      await service.save();
     }
-
-    await service.save();
 
     return res.status(200).json({
       success: true,
@@ -451,10 +549,24 @@ export const updateService = async (
       service,
     });
   } catch (error) {
-    console.error(
-      "UPDATE SERVICE ERROR:",
-      error
-    );
+    console.error("UPDATE SERVICE ERROR:", error);
+
+    /* -----------------------------
+       CLEANUP NEW IMAGE IF SAVE FAILED
+    ----------------------------- */
+
+    if (uploadedPublicId) {
+      await deleteCloudinaryImage(
+        uploadedPublicId
+      );
+    }
+
+    if (error?.code === 11000) {
+      return res.status(409).json({
+        success: false,
+        message: "Service already exists",
+      });
+    }
 
     return res.status(500).json({
       success: false,
@@ -464,19 +576,37 @@ export const updateService = async (
   }
 };
 
-// ========================================
-// DEACTIVATE SERVICE
-// ========================================
+/* =========================================================
+   DEACTIVATE SERVICE
+   PATCH /api/services/:id/deactivate
+========================================================= */
 
 export const deactivateService = async (
   req,
   res
 ) => {
   try {
+    const salonId = validateSalonAccess(req, res);
+
+    if (!salonId) return;
+
     const { id } = req.params;
 
     const service =
-      await Service.findById(id);
+      await Service.findOneAndUpdate(
+        {
+          _id: id,
+          salonId,
+        },
+        {
+          $set: {
+            isActive: false,
+          },
+        },
+        {
+          new: true,
+        }
+      );
 
     if (!service) {
       return res.status(404).json({
@@ -485,14 +615,9 @@ export const deactivateService = async (
       });
     }
 
-    service.isActive = false;
-
-    await service.save();
-
     return res.status(200).json({
       success: true,
-      message:
-        "Service deactivated successfully",
+      message: "Service deactivated successfully",
       service,
     });
   } catch (error) {
@@ -503,26 +628,43 @@ export const deactivateService = async (
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to deactivate service",
+      message: "Failed to deactivate service",
       error: error.message,
     });
   }
 };
 
-// ========================================
-// REACTIVATE SERVICE
-// ========================================
+/* =========================================================
+   REACTIVATE SERVICE
+   PATCH /api/services/:id/reactivate
+========================================================= */
 
 export const reactivateService = async (
   req,
   res
 ) => {
   try {
+    const salonId = validateSalonAccess(req, res);
+
+    if (!salonId) return;
+
     const { id } = req.params;
 
     const service =
-      await Service.findById(id);
+      await Service.findOneAndUpdate(
+        {
+          _id: id,
+          salonId,
+        },
+        {
+          $set: {
+            isActive: true,
+          },
+        },
+        {
+          new: true,
+        }
+      );
 
     if (!service) {
       return res.status(404).json({
@@ -531,14 +673,9 @@ export const reactivateService = async (
       });
     }
 
-    service.isActive = true;
-
-    await service.save();
-
     return res.status(200).json({
       success: true,
-      message:
-        "Service reactivated successfully",
+      message: "Service reactivated successfully",
       service,
     });
   } catch (error) {
@@ -549,26 +686,36 @@ export const reactivateService = async (
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to reactivate service",
+      message: "Failed to reactivate service",
       error: error.message,
     });
   }
 };
 
-// ========================================
-// DELETE SERVICE
-// ========================================
+/* =========================================================
+   DELETE SERVICE
+   DELETE /api/services/:id
+========================================================= */
 
 export const deleteService = async (
   req,
   res
 ) => {
   try {
+    const salonId = validateSalonAccess(req, res);
+
+    if (!salonId) return;
+
     const { id } = req.params;
 
-    const service =
-      await Service.findById(id);
+    /* -----------------------------
+       FIND ONLY WITHIN CURRENT SALON
+    ----------------------------- */
+
+    const service = await Service.findOne({
+      _id: id,
+      salonId,
+    });
 
     if (!service) {
       return res.status(404).json({
@@ -577,9 +724,18 @@ export const deleteService = async (
       });
     }
 
-    // ========================================
-    // DELETE CLOUDINARY IMAGE
-    // ========================================
+    /* -----------------------------
+       DELETE DATABASE RECORD
+    ----------------------------- */
+
+    await Service.deleteOne({
+      _id: id,
+      salonId,
+    });
+
+    /* -----------------------------
+       DELETE CLOUDINARY IMAGE
+    ----------------------------- */
 
     if (service.image?.publicId) {
       await deleteCloudinaryImage(
@@ -587,16 +743,9 @@ export const deleteService = async (
       );
     }
 
-    // ========================================
-    // DELETE DATABASE RECORD
-    // ========================================
-
-    await Service.findByIdAndDelete(id);
-
     return res.status(200).json({
       success: true,
-      message:
-        "Service deleted permanently",
+      message: "Service deleted successfully",
     });
   } catch (error) {
     console.error(
@@ -606,9 +755,9 @@ export const deleteService = async (
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to delete service",
+      message: "Failed to delete service",
       error: error.message,
     });
   }
 };
+

@@ -1,4 +1,38 @@
+
+import mongoose from "mongoose";
 import Product from "../models/Product.js";
+
+// ============================================================
+// HELPERS
+// ============================================================
+
+const getSalonId = (req) => {
+  return req.user?.salonId || null;
+};
+
+const validateSalonId = (req, res) => {
+  const salonId = getSalonId(req);
+
+  if (!salonId) {
+    res.status(403).json({
+      success: false,
+      message: "Salon access is required",
+    });
+
+    return null;
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(salonId)) {
+    res.status(403).json({
+      success: false,
+      message: "Invalid salon access",
+    });
+
+    return null;
+  }
+
+  return salonId;
+};
 
 // ============================================================
 // CREATE PRODUCT
@@ -7,6 +41,10 @@ import Product from "../models/Product.js";
 
 export const createProduct = async (req, res) => {
   try {
+    const salonId = validateSalonId(req, res);
+
+    if (!salonId) return;
+
     const {
       name,
       brand,
@@ -23,21 +61,21 @@ export const createProduct = async (req, res) => {
     // VALIDATION
     // ----------------------------------------
 
-    if (!name || !name.trim()) {
+    if (!name || !String(name).trim()) {
       return res.status(400).json({
         success: false,
         message: "Product name is required",
       });
     }
 
-    if (!category || !category.trim()) {
+    if (!category || !String(category).trim()) {
       return res.status(400).json({
         success: false,
         message: "Category is required",
       });
     }
 
-    if (!unit || !unit.trim()) {
+    if (!unit || !String(unit).trim()) {
       return res.status(400).json({
         success: false,
         message: "Unit is required",
@@ -52,30 +90,21 @@ export const createProduct = async (req, res) => {
     const minStock = Number(minimumStock ?? 0);
     const price = Number(purchasePrice ?? 0);
 
-    if (
-      Number.isNaN(stock) ||
-      stock < 0
-    ) {
+    if (Number.isNaN(stock) || stock < 0) {
       return res.status(400).json({
         success: false,
         message: "Invalid current stock",
       });
     }
 
-    if (
-      Number.isNaN(minStock) ||
-      minStock < 0
-    ) {
+    if (Number.isNaN(minStock) || minStock < 0) {
       return res.status(400).json({
         success: false,
         message: "Invalid minimum stock",
       });
     }
 
-    if (
-      Number.isNaN(price) ||
-      price < 0
-    ) {
+    if (Number.isNaN(price) || price < 0) {
       return res.status(400).json({
         success: false,
         message: "Invalid purchase price",
@@ -87,15 +116,21 @@ export const createProduct = async (req, res) => {
     // ----------------------------------------
 
     const product = await Product.create({
-      name: name.trim(),
-      brand: brand?.trim() || "",
-      category: category.trim(),
-      unit: unit.trim(),
+      salonId,
+
+      name: String(name).trim(),
+      brand: brand ? String(brand).trim() : "",
+      category: String(category).trim(),
+      unit: String(unit).trim(),
+
       currentStock: stock,
       minimumStock: minStock,
       purchasePrice: price,
-      vendor: vendor?.trim() || "",
-      notes: notes?.trim() || "",
+
+      vendor: vendor ? String(vendor).trim() : "",
+      notes: notes ? String(notes).trim() : "",
+
+      isActive: true,
     });
 
     return res.status(201).json({
@@ -104,10 +139,7 @@ export const createProduct = async (req, res) => {
       product,
     });
   } catch (error) {
-    console.error(
-      "CREATE PRODUCT ERROR:",
-      error
-    );
+    console.error("CREATE PRODUCT ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -122,11 +154,12 @@ export const createProduct = async (req, res) => {
 // GET /api/products
 // ============================================================
 
-export const getProducts = async (
-  req,
-  res
-) => {
+export const getProducts = async (req, res) => {
   try {
+    const salonId = validateSalonId(req, res);
+
+    if (!salonId) return;
+
     const {
       search,
       category,
@@ -134,38 +167,34 @@ export const getProducts = async (
       active,
     } = req.query;
 
-    const filter = {};
+    // IMPORTANT:
+    // Always start with salonId.
+    const filter = {
+      salonId,
+    };
 
     // ----------------------------------------
     // ACTIVE FILTER
     // ----------------------------------------
 
     if (active !== undefined) {
-      filter.isActive =
-        active === "true";
+      filter.isActive = active === "true";
     }
 
     // ----------------------------------------
     // CATEGORY FILTER
     // ----------------------------------------
 
-    if (
-      category &&
-      category.trim()
-    ) {
-      filter.category = category.trim();
+    if (category && String(category).trim()) {
+      filter.category = String(category).trim();
     }
 
     // ----------------------------------------
     // SEARCH
     // ----------------------------------------
 
-    if (
-      search &&
-      search.trim()
-    ) {
-      const searchValue =
-        search.trim();
+    if (search && String(search).trim()) {
+      const searchValue = String(search).trim();
 
       filter.$or = [
         {
@@ -207,16 +236,10 @@ export const getProducts = async (
       filter.$expr = {
         $and: [
           {
-            $gt: [
-              "$currentStock",
-              0,
-            ],
+            $gt: ["$currentStock", 0],
           },
           {
-            $lte: [
-              "$currentStock",
-              "$minimumStock",
-            ],
+            $lte: ["$currentStock", "$minimumStock"],
           },
         ],
       };
@@ -224,10 +247,7 @@ export const getProducts = async (
 
     if (status === "in_stock") {
       filter.$expr = {
-        $gt: [
-          "$currentStock",
-          "$minimumStock",
-        ],
+        $gt: ["$currentStock", "$minimumStock"],
       };
     }
 
@@ -235,11 +255,9 @@ export const getProducts = async (
     // FETCH
     // ----------------------------------------
 
-    const products =
-      await Product.find(filter)
-        .sort({
-          createdAt: -1,
-        });
+    const products = await Product.find(filter).sort({
+      createdAt: -1,
+    });
 
     return res.status(200).json({
       success: true,
@@ -247,10 +265,7 @@ export const getProducts = async (
       products,
     });
   } catch (error) {
-    console.error(
-      "GET PRODUCTS ERROR:",
-      error
-    );
+    console.error("GET PRODUCTS ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -265,15 +280,25 @@ export const getProducts = async (
 // GET /api/products/:id
 // ============================================================
 
-export const getProductById = async (
-  req,
-  res
-) => {
+export const getProductById = async (req, res) => {
   try {
+    const salonId = validateSalonId(req, res);
+
+    if (!salonId) return;
+
     const { id } = req.params;
 
-    const product =
-      await Product.findById(id);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product ID",
+      });
+    }
+
+    const product = await Product.findOne({
+      _id: id,
+      salonId,
+    });
 
     if (!product) {
       return res.status(404).json({
@@ -287,10 +312,7 @@ export const getProductById = async (
       product,
     });
   } catch (error) {
-    console.error(
-      "GET PRODUCT ERROR:",
-      error
-    );
+    console.error("GET PRODUCT ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -305,12 +327,20 @@ export const getProductById = async (
 // PATCH /api/products/:id
 // ============================================================
 
-export const updateProduct = async (
-  req,
-  res
-) => {
+export const updateProduct = async (req, res) => {
   try {
+    const salonId = validateSalonId(req, res);
+
+    if (!salonId) return;
+
     const { id } = req.params;
+
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product ID",
+      });
+    }
 
     const allowedFields = [
       "name",
@@ -328,11 +358,8 @@ export const updateProduct = async (
     const updateData = {};
 
     for (const field of allowedFields) {
-      if (
-        req.body[field] !== undefined
-      ) {
-        updateData[field] =
-          req.body[field];
+      if (req.body[field] !== undefined) {
+        updateData[field] = req.body[field];
       }
     }
 
@@ -341,119 +368,92 @@ export const updateProduct = async (
     // ----------------------------------------
 
     if (updateData.name !== undefined) {
-      updateData.name =
-        String(
-          updateData.name
-        ).trim();
+      updateData.name = String(updateData.name).trim();
+
+      if (!updateData.name) {
+        return res.status(400).json({
+          success: false,
+          message: "Product name cannot be empty",
+        });
+      }
     }
 
     if (updateData.brand !== undefined) {
-      updateData.brand =
-        String(
-          updateData.brand
-        ).trim();
+      updateData.brand = String(updateData.brand).trim();
     }
 
-    if (
-      updateData.category !==
-      undefined
-    ) {
-      updateData.category =
-        String(
-          updateData.category
-        ).trim();
+    if (updateData.category !== undefined) {
+      updateData.category = String(updateData.category).trim();
+
+      if (!updateData.category) {
+        return res.status(400).json({
+          success: false,
+          message: "Category cannot be empty",
+        });
+      }
     }
 
     if (updateData.unit !== undefined) {
-      updateData.unit =
-        String(
-          updateData.unit
-        ).trim();
+      updateData.unit = String(updateData.unit).trim();
+
+      if (!updateData.unit) {
+        return res.status(400).json({
+          success: false,
+          message: "Unit cannot be empty",
+        });
+      }
     }
 
     if (updateData.vendor !== undefined) {
-      updateData.vendor =
-        String(
-          updateData.vendor
-        ).trim();
+      updateData.vendor = String(updateData.vendor).trim();
     }
 
     if (updateData.notes !== undefined) {
-      updateData.notes =
-        String(
-          updateData.notes
-        ).trim();
+      updateData.notes = String(updateData.notes).trim();
     }
 
     // ----------------------------------------
     // NUMBER CLEANUP
     // ----------------------------------------
 
-    if (
-      updateData.currentStock !==
-      undefined
-    ) {
-      updateData.currentStock =
-        Number(
-          updateData.currentStock
-        );
+    if (updateData.currentStock !== undefined) {
+      updateData.currentStock = Number(updateData.currentStock);
 
       if (
-        Number.isNaN(
-          updateData.currentStock
-        ) ||
+        Number.isNaN(updateData.currentStock) ||
         updateData.currentStock < 0
       ) {
         return res.status(400).json({
           success: false,
-          message:
-            "Invalid current stock",
+          message: "Invalid current stock",
         });
       }
     }
 
-    if (
-      updateData.minimumStock !==
-      undefined
-    ) {
-      updateData.minimumStock =
-        Number(
-          updateData.minimumStock
-        );
+    if (updateData.minimumStock !== undefined) {
+      updateData.minimumStock = Number(updateData.minimumStock);
 
       if (
-        Number.isNaN(
-          updateData.minimumStock
-        ) ||
+        Number.isNaN(updateData.minimumStock) ||
         updateData.minimumStock < 0
       ) {
         return res.status(400).json({
           success: false,
-          message:
-            "Invalid minimum stock",
+          message: "Invalid minimum stock",
         });
       }
     }
 
-    if (
-      updateData.purchasePrice !==
-      undefined
-    ) {
-      updateData.purchasePrice =
-        Number(
-          updateData.purchasePrice
-        );
+    if (updateData.purchasePrice !== undefined) {
+      updateData.purchasePrice = Number(updateData.purchasePrice);
 
       if (
-        Number.isNaN(
-          updateData.purchasePrice
-        ) ||
+        Number.isNaN(updateData.purchasePrice) ||
         updateData.purchasePrice < 0
       ) {
         return res.status(400).json({
           success: false,
-          message:
-            "Invalid purchase price",
+          message: "Invalid purchase price",
         });
       }
     }
@@ -462,15 +462,17 @@ export const updateProduct = async (
     // UPDATE
     // ----------------------------------------
 
-    const product =
-      await Product.findByIdAndUpdate(
-        id,
-        updateData,
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
+    const product = await Product.findOneAndUpdate(
+      {
+        _id: id,
+        salonId,
+      },
+      updateData,
+      {
+        new: true,
+        runValidators: true,
+      }
+    );
 
     if (!product) {
       return res.status(404).json({
@@ -481,15 +483,11 @@ export const updateProduct = async (
 
     return res.status(200).json({
       success: true,
-      message:
-        "Product updated successfully",
+      message: "Product updated successfully",
       product,
     });
   } catch (error) {
-    console.error(
-      "UPDATE PRODUCT ERROR:",
-      error
-    );
+    console.error("UPDATE PRODUCT ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -504,15 +502,25 @@ export const updateProduct = async (
 // DELETE /api/products/:id
 // ============================================================
 
-export const deleteProduct = async (
-  req,
-  res
-) => {
+export const deleteProduct = async (req, res) => {
   try {
+    const salonId = validateSalonId(req, res);
+
+    if (!salonId) return;
+
     const { id } = req.params;
 
-    const product =
-      await Product.findById(id);
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid product ID",
+      });
+    }
+
+    const product = await Product.findOne({
+      _id: id,
+      salonId,
+    });
 
     if (!product) {
       return res.status(404).json({
@@ -531,15 +539,11 @@ export const deleteProduct = async (
 
     return res.status(200).json({
       success: true,
-      message:
-        "Product removed successfully",
+      message: "Product removed successfully",
       product,
     });
   } catch (error) {
-    console.error(
-      "DELETE PRODUCT ERROR:",
-      error
-    );
+    console.error("DELETE PRODUCT ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -554,41 +558,35 @@ export const deleteProduct = async (
 // GET /api/products/summary
 // ============================================================
 
-export const getProductSummary = async (
-  req,
-  res
-) => {
+export const getProductSummary = async (req, res) => {
   try {
-    const products =
-      await Product.find({
-        isActive: true,
-      });
+    const salonId = validateSalonId(req, res);
 
-    const totalProducts =
-      products.length;
+    if (!salonId) return;
 
-    const lowStock =
-      products.filter(
-        (product) =>
-          product.currentStock > 0 &&
-          product.currentStock <=
-            product.minimumStock
-      ).length;
+    const products = await Product.find({
+      salonId,
+      isActive: true,
+    });
 
-    const outOfStock =
-      products.filter(
-        (product) =>
-          product.currentStock === 0
-      ).length;
+    const totalProducts = products.length;
 
-    const totalStockValue =
-      products.reduce(
-        (total, product) =>
-          total +
-          product.currentStock *
-            product.purchasePrice,
-        0
-      );
+    const lowStock = products.filter(
+      (product) =>
+        product.currentStock > 0 &&
+        product.currentStock <= product.minimumStock
+    ).length;
+
+    const outOfStock = products.filter(
+      (product) => product.currentStock === 0
+    ).length;
+
+    const totalStockValue = products.reduce(
+      (total, product) =>
+        total +
+        product.currentStock * product.purchasePrice,
+      0
+    );
 
     return res.status(200).json({
       success: true,
@@ -600,15 +598,11 @@ export const getProductSummary = async (
       },
     });
   } catch (error) {
-    console.error(
-      "PRODUCT SUMMARY ERROR:",
-      error
-    );
+    console.error("PRODUCT SUMMARY ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to fetch product summary",
+      message: "Failed to fetch product summary",
       error: error.message,
     });
   }

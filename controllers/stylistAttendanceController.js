@@ -1,6 +1,8 @@
+
 import mongoose from "mongoose";
 
 import Stylist from "../models/Stylist.js";
+
 import StylistAttendance from "../models/StylistAttendance.js";
 
 // ======================================================
@@ -21,6 +23,22 @@ const isValidObjectId = (id) => {
   return mongoose.Types.ObjectId.isValid(id);
 };
 
+const getSalonId = (req) => req.user?.salonId || null;
+
+const validateSalonAccess = (req, res) => {
+  const salonId = getSalonId(req);
+
+  if (!salonId || !isValidObjectId(salonId)) {
+    res.status(403).json({
+      success: false,
+      message: "Salon access is required",
+    });
+    return null;
+  }
+
+  return salonId;
+};
+
 const toNumber = (value, fallback = 0) => {
   if (
     value === undefined ||
@@ -38,9 +56,7 @@ const toNumber = (value, fallback = 0) => {
 };
 
 const roundMoney = (value) => {
-  return (
-    Math.round(Number(value || 0) * 100) / 100
-  );
+  return Math.round(Number(value || 0) * 100) / 100;
 };
 
 const normalizeStatus = (value) => {
@@ -67,9 +83,7 @@ const getIndiaDateString = (date = new Date()) => {
 const indiaDateToUTC = (dateString) => {
   if (
     typeof dateString !== "string" ||
-    !/^\d{4}-\d{2}-\d{2}$/.test(
-      dateString
-    )
+    !/^\d{4}-\d{2}-\d{2}$/.test(dateString)
   ) {
     return null;
   }
@@ -105,8 +119,7 @@ const normalizeAttendanceDate = (value) => {
     return null;
   }
 
-  const indiaDate =
-    getIndiaDateString(date);
+  const indiaDate = getIndiaDateString(date);
 
   return indiaDateToUTC(indiaDate);
 };
@@ -119,27 +132,19 @@ const getDateRange = (
   startDate,
   endDate
 ) => {
-  const today =
-    getIndiaDateString();
+  const today = getIndiaDateString();
 
-  const startString =
-    startDate || today;
+  const startString = startDate || today;
+  const endString = endDate || today;
 
-  const endString =
-    endDate || today;
-
-  const start =
-    indiaDateToUTC(startString);
-
-  const endStart =
-    indiaDateToUTC(endString);
+  const start = indiaDateToUTC(startString);
+  const endStart = indiaDateToUTC(endString);
 
   if (!start || !endStart) {
     return null;
   }
 
-  const end =
-    new Date(endStart);
+  const end = new Date(endStart);
 
   // India next-day midnight minus 1ms
   end.setTime(
@@ -200,21 +205,19 @@ const getDailyBasicSalary = (
       ? "DAILY"
       : "MONTHLY";
 
-  const monthlySalary =
-    Math.max(
-      0,
-      toNumber(
-        stylist.monthlySalary
-      )
-    );
+  const monthlySalary = Math.max(
+    0,
+    toNumber(
+      stylist.monthlySalary
+    )
+  );
 
-  const dailySalary =
-    Math.max(
-      0,
-      toNumber(
-        stylist.basicSalary8h
-      )
-    );
+  const dailySalary = Math.max(
+    0,
+    toNumber(
+      stylist.basicSalary8h
+    )
+  );
 
   if (salaryType === "MONTHLY") {
     return roundMoney(
@@ -235,46 +238,39 @@ const calculateAttendanceSalary = ({
   status,
   workedHours,
 }) => {
-  const standardHours =
-    Math.max(
-      1,
-      toNumber(
-        stylist.standardWorkingHours,
-        8
-      )
-    );
+  const standardHours = Math.max(
+    1,
+    toNumber(
+      stylist.standardWorkingHours,
+      8
+    )
+  );
 
-  const overtimeRate =
-    Math.max(
-      0,
-      toNumber(
-        stylist.overtimeRatePerHour
-      )
-    );
+  const overtimeRate = Math.max(
+    0,
+    toNumber(
+      stylist.overtimeRatePerHour
+    )
+  );
 
   const dailyBasicSalary =
-    getDailyBasicSalary(
-      stylist
-    );
+    getDailyBasicSalary(stylist);
 
-  const safeWorkedHours =
-    Math.max(
-      0,
-      toNumber(workedHours)
-    );
+  const safeWorkedHours = Math.max(
+    0,
+    toNumber(workedHours)
+  );
 
-  const regularHours =
-    Math.min(
-      safeWorkedHours,
+  const regularHours = Math.min(
+    safeWorkedHours,
+    standardHours
+  );
+
+  let overtimeHours = Math.max(
+    0,
+    safeWorkedHours -
       standardHours
-    );
-
-  let overtimeHours =
-    Math.max(
-      0,
-      safeWorkedHours -
-        standardHours
-    );
+  );
 
   let basicSalaryEarned = 0;
 
@@ -310,35 +306,29 @@ const calculateAttendanceSalary = ({
     overtimeSalary;
 
   return {
-    standardHours:
-      roundMoney(
-        standardHours
-      ),
+    standardHours: roundMoney(
+      standardHours
+    ),
 
-    regularHours:
-      roundMoney(
-        regularHours
-      ),
+    regularHours: roundMoney(
+      regularHours
+    ),
 
-    overtimeHours:
-      roundMoney(
-        overtimeHours
-      ),
+    overtimeHours: roundMoney(
+      overtimeHours
+    ),
 
-    basicSalaryEarned:
-      roundMoney(
-        basicSalaryEarned
-      ),
+    basicSalaryEarned: roundMoney(
+      basicSalaryEarned
+    ),
 
-    overtimeSalary:
-      roundMoney(
-        overtimeSalary
-      ),
+    overtimeSalary: roundMoney(
+      overtimeSalary
+    ),
 
-    totalSalaryEarned:
-      roundMoney(
-        totalSalaryEarned
-      ),
+    totalSalaryEarned: roundMoney(
+      totalSalaryEarned
+    ),
   };
 };
 
@@ -351,6 +341,18 @@ const calculateAttendanceSalary = ({
 export const markAttendance =
   async (req, res) => {
     try {
+      // ==================================================
+      // MULTI-TENANT ACCESS
+      // ==================================================
+
+      const salonId =
+        validateSalonAccess(
+          req,
+          res
+        );
+
+      if (!salonId) return;
+
       const { id } =
         req.params;
 
@@ -379,10 +381,15 @@ export const markAttendance =
 
       // ==================================================
       // GET STYLIST
+      // IMPORTANT:
+      // Stylist must belong to same salon
       // ==================================================
 
       const stylist =
-        await Stylist.findById(id);
+        await Stylist.findOne({
+          _id: id,
+          salonId,
+        });
 
       if (!stylist) {
         return res.status(404).json({
@@ -628,16 +635,20 @@ export const markAttendance =
 
       // ==================================================
       // UPSERT
+      // IMPORTANT:
+      // salonId + stylist + date
       // ==================================================
 
       const attendance =
         await StylistAttendance.findOneAndUpdate(
           {
+            salonId,
             stylist: id,
             date: attendanceDate,
           },
           {
             $set: {
+              salonId,
               stylist: id,
               date: attendanceDate,
 
@@ -784,6 +795,18 @@ export const markAttendance =
 export const getStylistAttendance =
   async (req, res) => {
     try {
+      // ==================================================
+      // MULTI-TENANT ACCESS
+      // ==================================================
+
+      const salonId =
+        validateSalonAccess(
+          req,
+          res
+        );
+
+      if (!salonId) return;
+
       const { id } =
         req.params;
 
@@ -797,8 +820,15 @@ export const getStylistAttendance =
         });
       }
 
+      // ==================================================
+      // GET STYLIST
+      // ==================================================
+
       const stylist =
-        await Stylist.findById(id)
+        await Stylist.findOne({
+          _id: id,
+          salonId,
+        })
           .select(
             [
               "name",
@@ -822,6 +852,10 @@ export const getStylistAttendance =
         });
       }
 
+      // ==================================================
+      // DATE RANGE
+      // ==================================================
+
       const range =
         getDateRange(
           req.query.startDate,
@@ -836,8 +870,13 @@ export const getStylistAttendance =
         });
       }
 
+      // ==================================================
+      // GET ATTENDANCE
+      // ==================================================
+
       const attendance =
         await StylistAttendance.find({
+          salonId,
           stylist: id,
           date: {
             $gte: range.start,
@@ -848,6 +887,10 @@ export const getStylistAttendance =
             date: -1,
           })
           .lean();
+
+      // ==================================================
+      // TOTAL SALARY
+      // ==================================================
 
       const totalSalary =
         attendance.reduce(
@@ -860,6 +903,10 @@ export const getStylistAttendance =
           0
         );
 
+      // ==================================================
+      // TOTAL WORKED HOURS
+      // ==================================================
+
       const totalWorkedHours =
         attendance.reduce(
           (sum, item) =>
@@ -871,6 +918,10 @@ export const getStylistAttendance =
           0
         );
 
+      // ==================================================
+      // TOTAL OVERTIME HOURS
+      // ==================================================
+
       const totalOvertimeHours =
         attendance.reduce(
           (sum, item) =>
@@ -881,6 +932,10 @@ export const getStylistAttendance =
             ),
           0
         );
+
+      // ==================================================
+      // RESPONSE
+      // ==================================================
 
       return res.status(200).json({
         success: true,
@@ -941,6 +996,18 @@ export const getStylistAttendance =
 export const getAttendanceSummary =
   async (req, res) => {
     try {
+      // ==================================================
+      // MULTI-TENANT ACCESS
+      // ==================================================
+
+      const salonId =
+        validateSalonAccess(
+          req,
+          res
+        );
+
+      if (!salonId) return;
+
       const { id } =
         req.params;
 
@@ -954,8 +1021,15 @@ export const getAttendanceSummary =
         });
       }
 
+      // ==================================================
+      // GET STYLIST
+      // ==================================================
+
       const stylist =
-        await Stylist.findById(id)
+        await Stylist.findOne({
+          _id: id,
+          salonId,
+        })
           .lean();
 
       if (!stylist) {
@@ -965,6 +1039,10 @@ export const getAttendanceSummary =
             "Stylist not found",
         });
       }
+
+      // ==================================================
+      // DATE RANGE
+      // ==================================================
 
       const range =
         getDateRange(
@@ -985,10 +1063,21 @@ export const getAttendanceSummary =
           id
         );
 
+      const salonObjectId =
+        new mongoose.Types.ObjectId(
+          salonId
+        );
+
+      // ==================================================
+      // SUMMARY
+      // ==================================================
+
       const stats =
         await StylistAttendance.aggregate([
           {
             $match: {
+              salonId: salonObjectId,
+
               stylist: stylistId,
 
               date: {
@@ -1107,6 +1196,10 @@ export const getAttendanceSummary =
           overtimeSalary: 0,
           totalSalaryEarned: 0,
         };
+
+      // ==================================================
+      // RESPONSE
+      // ==================================================
 
       return res.status(200).json({
         success: true,

@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 import Stylist from "../models/Stylist.js";
@@ -44,6 +45,27 @@ const roundMoney = (value) => {
       Number(value || 0) * 100
     ) / 100
   );
+};
+
+// ======================================================
+// MULTI-TENANT ACCESS
+// ======================================================
+
+const getSalonId = (req) => req.user?.salonId || null;
+
+const validateSalonAccess = (req, res) => {
+  const salonId = getSalonId(req);
+
+  if (!salonId || !isValidObjectId(salonId)) {
+    res.status(403).json({
+      success: false,
+      message: "Salon access is required",
+    });
+
+    return null;
+  }
+
+  return salonId;
 };
 
 // ======================================================
@@ -354,6 +376,14 @@ const getDailyBasicSalary = (
 export const createStylist =
   async (req, res) => {
     try {
+      const salonId =
+        validateSalonAccess(
+          req,
+          res
+        );
+
+      if (!salonId) return;
+
       const {
         name,
         phone,
@@ -438,6 +468,8 @@ export const createStylist =
 
       const stylist =
         await Stylist.create({
+          salonId,
+
           name:
             String(name).trim(),
 
@@ -560,7 +592,17 @@ export const getStylists =
         search,
       } = req.query;
 
-      const filter = {};
+      const salonId =
+        validateSalonAccess(
+          req,
+          res
+        );
+
+      if (!salonId) return;
+
+      const filter = {
+        salonId,
+      };
 
       // --------------------------------------------------
       // STATUS
@@ -693,10 +735,19 @@ export const getStylistById =
         });
       }
 
+      const salonId =
+        validateSalonAccess(
+          req,
+          res
+        );
+
+      if (!salonId) return;
+
       const stylist =
-        await Stylist.findById(
-          id
-        ).lean();
+        await Stylist.findOne({
+          _id: id,
+          salonId,
+        }).lean();
 
       if (!stylist) {
         return res.status(404).json({
@@ -764,13 +815,26 @@ export const getStylistProfile =
       }
 
       // --------------------------------------------------
+      // SALON ACCESS
+      // --------------------------------------------------
+
+      const salonId =
+        validateSalonAccess(
+          req,
+          res
+        );
+
+      if (!salonId) return;
+
+      // --------------------------------------------------
       // STYLIST
       // --------------------------------------------------
 
       const stylist =
-        await Stylist.findById(
-          id
-        ).lean();
+        await Stylist.findOne({
+          _id: id,
+          salonId,
+        }).lean();
 
       if (!stylist) {
         return res.status(404).json({
@@ -1307,6 +1371,8 @@ export const getStylistProfile =
         await StylistAttendance.aggregate([
           {
             $match: {
+              salonId,
+
               stylist:
                 stylistId,
 
@@ -1697,6 +1763,14 @@ export const getStylistProfile =
 export const updateStylist =
   async (req, res) => {
     try {
+      const salonId =
+        validateSalonAccess(
+          req,
+          res
+        );
+
+      if (!salonId) return;
+
       const { id } =
         req.params;
 
@@ -1976,8 +2050,11 @@ export const updateStylist =
       // ==================================================
 
       const stylist =
-        await Stylist.findByIdAndUpdate(
-          id,
+        await Stylist.findOneAndUpdate(
+          {
+            _id: id,
+            salonId,
+          },
           {
             $set: updateData,
           },
@@ -2026,6 +2103,14 @@ export const updateStylist =
 export const deleteStylist =
   async (req, res) => {
     try {
+      const salonId =
+        validateSalonAccess(
+          req,
+          res
+        );
+
+      if (!salonId) return;
+
       const { id } =
         req.params;
 
@@ -2040,9 +2125,10 @@ export const deleteStylist =
       }
 
       const stylist =
-        await Stylist.findById(
-          id
-        );
+        await Stylist.findOne({
+          _id: id,
+          salonId,
+        });
 
       if (!stylist) {
         return res.status(404).json({
@@ -2098,6 +2184,7 @@ export const deleteStylist =
 
       await StylistAttendance.deleteMany(
         {
+          salonId,
           stylist: id,
         }
       );
@@ -2106,9 +2193,10 @@ export const deleteStylist =
       // DELETE STYLIST
       // ==================================================
 
-      await Stylist.findByIdAndDelete(
-        id
-      );
+      await Stylist.findOneAndDelete({
+        _id: id,
+        salonId,
+      });
 
       return res.status(200).json({
         success: true,

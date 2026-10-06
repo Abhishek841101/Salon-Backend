@@ -1,7 +1,19 @@
+
 import mongoose from "mongoose";
 
 const productSchema = new mongoose.Schema(
   {
+    // ========================================
+    // SALON
+    // ========================================
+
+    salonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salon",
+      required: [true, "Salon ID is required"],
+      index: true,
+    },
+
     // ========================================
     // PRODUCT NAME
     // ========================================
@@ -35,7 +47,6 @@ const productSchema = new mongoose.Schema(
 
     // ========================================
     // UNIT
-    // pcs / bottle / ml / litre / kg
     // ========================================
 
     unit: {
@@ -57,7 +68,6 @@ const productSchema = new mongoose.Schema(
 
     // ========================================
     // MINIMUM STOCK
-    // Low-stock alert threshold
     // ========================================
 
     minimumStock: {
@@ -68,7 +78,6 @@ const productSchema = new mongoose.Schema(
 
     // ========================================
     // PURCHASE PRICE
-    // Internal salon purchase cost
     // ========================================
 
     purchasePrice: {
@@ -124,10 +133,22 @@ productSchema.index({
 });
 
 productSchema.index({
+  salonId: 1,
+  category: 1,
+});
+
+productSchema.index({
+  salonId: 1,
+  isActive: 1,
+});
+
+productSchema.index({
+  salonId: 1,
   currentStock: 1,
 });
 
 productSchema.index({
+  salonId: 1,
   minimumStock: 1,
 });
 
@@ -135,24 +156,25 @@ productSchema.index({
 // STOCK STATUS VIRTUAL
 // ========================================
 
-productSchema.virtual("stockStatus").get(
-  function () {
-    if (this.currentStock === 0) {
-      return "Out of Stock";
-    }
-
-    if (
-      this.minimumStock > 0 &&
-      this.currentStock <= this.minimumStock
-    ) {
-      return "Low Stock";
-    }
-
-    return "In Stock";
+productSchema.virtual("stockStatus").get(function () {
+  if (this.currentStock === 0) {
+    return "Out of Stock";
   }
-);
 
-// Make virtual available in JSON
+  if (
+    this.minimumStock > 0 &&
+    this.currentStock <= this.minimumStock
+  ) {
+    return "Low Stock";
+  }
+
+  return "In Stock";
+});
+
+// ========================================
+// JSON / OBJECT VIRTUALS
+// ========================================
+
 productSchema.set("toJSON", {
   virtuals: true,
 });
@@ -161,9 +183,12 @@ productSchema.set("toObject", {
   virtuals: true,
 });
 
-const Product = mongoose.model(
-  "Product",
-  productSchema
-);
+// ========================================
+// MODEL
+// ========================================
+
+const Product =
+  mongoose.models.Product ||
+  mongoose.model("Product", productSchema);
 
 export default Product;

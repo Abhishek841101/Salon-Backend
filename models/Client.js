@@ -1,7 +1,19 @@
+
 import mongoose from "mongoose";
 
 const clientSchema = new mongoose.Schema(
   {
+    // ========================================
+    // SALON
+    // ========================================
+
+    salonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salon",
+      required: [true, "Salon ID is required"],
+      index: true,
+    },
+
     // ========================================
     // BASIC DETAILS
     // ========================================
@@ -17,8 +29,6 @@ const clientSchema = new mongoose.Schema(
       type: String,
       required: [true, "Client phone number is required"],
       trim: true,
-      unique: true,
-      index: true,
     },
 
     email: {
@@ -42,10 +52,11 @@ const clientSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
     anniversaryDate: {
-  type: Date,
-  default: null,
-},
+      type: Date,
+      default: null,
+    },
 
     address: {
       type: String,
@@ -127,7 +138,6 @@ const clientSchema = new mongoose.Schema(
 // NORMALIZE PHONE
 // ========================================
 
-// No next() callback needed
 clientSchema.pre("save", function () {
   if (this.phone) {
     this.phone = String(this.phone).trim();
@@ -143,6 +153,25 @@ clientSchema.index({
   phone: "text",
   email: "text",
 });
+
+// ========================================
+// MULTI-SALON UNIQUE PHONE
+// ========================================
+//
+// Same phone can exist in different salons.
+// But duplicate phone inside the same salon
+// is not allowed.
+//
+
+clientSchema.index(
+  {
+    salonId: 1,
+    phone: 1,
+  },
+  {
+    unique: true,
+  }
+);
 
 // ========================================
 // MODEL

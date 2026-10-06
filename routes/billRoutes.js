@@ -1,3 +1,4 @@
+
 import express from "express";
 
 import {
@@ -9,28 +10,48 @@ import {
   getTotalRevenue,
 } from "../controllers/billController.js";
 
+import {
+  protectAdmin,
+} from "../middleware/authMiddleware.js";
+
 const router = express.Router();
+
+// ========================================
+// ALL BILL ROUTES = ADMIN ONLY
+// ========================================
 
 // ========================================
 // CREATE BILL
 // POST /api/bills
 // ========================================
 
-router.post("/", createBill);
+router.post(
+  "/",
+  protectAdmin,
+  createBill
+);
 
 // ========================================
 // GET TOTAL REVENUE
 // GET /api/bills/revenue
 // ========================================
 
-router.get("/revenue", getTotalRevenue);
+router.get(
+  "/revenue",
+  protectAdmin,
+  getTotalRevenue
+);
 
 // ========================================
 // GET ALL BILLS
 // GET /api/bills
 // ========================================
 
-router.get("/", getBills);
+router.get(
+  "/",
+  protectAdmin,
+  getBills
+);
 
 // ========================================
 // GET BILL BY INVOICE NUMBER
@@ -39,6 +60,7 @@ router.get("/", getBills);
 
 router.get(
   "/invoice/:invoiceNumber",
+  protectAdmin,
   getBillByInvoiceNumber
 );
 
@@ -47,7 +69,11 @@ router.get(
 // GET /api/bills/:id
 // ========================================
 
-router.get("/:id", getBillById);
+router.get(
+  "/:id",
+  protectAdmin,
+  getBillById
+);
 
 // ========================================
 // UPDATE PAYMENT STATUS
@@ -56,6 +82,7 @@ router.get("/:id", getBillById);
 
 router.patch(
   "/:id/payment",
+  protectAdmin,
   updatePaymentStatus
 );
 

@@ -2,6 +2,21 @@ import mongoose from "mongoose";
 
 const stylistAttendanceSchema = new mongoose.Schema(
   {
+    // ======================================================
+    // SALON
+    // ======================================================
+
+    salonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salon",
+      required: [true, "Salon ID is required"],
+      index: true,
+    },
+
+    // ======================================================
+    // STYLIST
+    // ======================================================
+
     stylist: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Stylist",
@@ -9,11 +24,19 @@ const stylistAttendanceSchema = new mongoose.Schema(
       index: true,
     },
 
+    // ======================================================
+    // DATE
+    // ======================================================
+
     date: {
       type: Date,
       required: true,
       index: true,
     },
+
+    // ======================================================
+    // ATTENDANCE STATUS
+    // ======================================================
 
     status: {
       type: String,
@@ -26,6 +49,10 @@ const stylistAttendanceSchema = new mongoose.Schema(
       default: "PRESENT",
     },
 
+    // ======================================================
+    // CHECK IN / CHECK OUT
+    // ======================================================
+
     checkIn: {
       type: Date,
       default: null,
@@ -35,6 +62,10 @@ const stylistAttendanceSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+
+    // ======================================================
+    // WORKING HOURS
+    // ======================================================
 
     workedHours: {
       type: Number,
@@ -47,6 +78,10 @@ const stylistAttendanceSchema = new mongoose.Schema(
       min: 0,
       default: 0,
     },
+
+    // ======================================================
+    // SALARY
+    // ======================================================
 
     basicSalaryEarned: {
       type: Number,
@@ -66,6 +101,10 @@ const stylistAttendanceSchema = new mongoose.Schema(
       default: 0,
     },
 
+    // ======================================================
+    // NOTES
+    // ======================================================
+
     notes: {
       type: String,
       trim: true,
@@ -77,9 +116,16 @@ const stylistAttendanceSchema = new mongoose.Schema(
   }
 );
 
+// ======================================================
+// UNIQUE ATTENDANCE
+//
 // One attendance record per stylist per date
+// within each salon.
+// ======================================================
+
 stylistAttendanceSchema.index(
   {
+    salonId: 1,
     stylist: 1,
     date: 1,
   },
@@ -88,7 +134,12 @@ stylistAttendanceSchema.index(
   }
 );
 
+// ======================================================
+// MODEL
+// ======================================================
+
 const StylistAttendance =
+  mongoose.models.StylistAttendance ||
   mongoose.model(
     "StylistAttendance",
     stylistAttendanceSchema

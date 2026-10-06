@@ -1,3 +1,4 @@
+
 import mongoose from "mongoose";
 
 import Salary from "../models/Salary.js";
@@ -10,6 +11,16 @@ import StylistAttendance from "../models/StylistAttendance.js";
 
 const isValidObjectId = (id) => {
   return mongoose.Types.ObjectId.isValid(id);
+};
+
+const getSalonId = (req) => {
+  const salonId = req.user?.salonId;
+
+  if (!salonId || !isValidObjectId(salonId)) {
+    return null;
+  }
+
+  return salonId;
 };
 
 const toNumber = (value, fallback = 0) => {
@@ -181,22 +192,31 @@ const calculateSalary = ({
 
   return {
     basicSalary: roundMoney(basic),
-    overtimeSalary: roundMoney(overtime),
+
+    overtimeSalary: roundMoney(
+      overtime
+    ),
+
     commission: roundMoney(
       finalCommission
     ),
+
     bonus: roundMoney(
       finalBonus
     ),
+
     advance: roundMoney(
       finalAdvance
     ),
+
     deduction: roundMoney(
       finalDeduction
     ),
+
     grossSalary: roundMoney(
       grossSalary
     ),
+
     netSalary: roundMoney(
       netSalary
     ),
@@ -208,6 +228,7 @@ const calculateSalary = ({
 // ======================================================
 
 const getAttendanceSalary = async ({
+  salonId,
   stylistId,
   month,
 }) => {
@@ -219,6 +240,7 @@ const getAttendanceSalary = async ({
 
   const attendance =
     await StylistAttendance.find({
+      salonId,
       stylist: stylistId,
       date: {
         $gte: range.start,
@@ -304,167 +326,186 @@ const getAttendanceSalary = async ({
 // POST /api/salaries
 // ======================================================
 
-export const createSalary =
-  async (req, res) => {
-    try {
-      const {
-        stylist,
-        month,
-        commission = 0,
-        bonus = 0,
-        advance = 0,
-        deduction = 0,
-        paymentMethod = "CASH",
-        notes = "",
-      } = req.body;
+export const createSalary = async (
+  req,
+  res
+) => {
+  try {
+    const salonId = getSalonId(req);
 
-      // --------------------------------------------------
-      // VALIDATE STYLIST
-      // --------------------------------------------------
-
-      if (
-        !stylist ||
-        !isValidObjectId(stylist)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Valid stylist is required",
-        });
-      }
-
-      // --------------------------------------------------
-      // MONTH
-      // --------------------------------------------------
-
-      const finalMonth =
-        month || getCurrentMonth();
-
-      if (!isValidMonth(finalMonth)) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid month. Use YYYY-MM format",
-        });
-      }
-
-      // --------------------------------------------------
-      // GET STYLIST
-      // --------------------------------------------------
-
-      const stylistData =
-        await Stylist.findById(
-          stylist
-        ).lean();
-
-      if (!stylistData) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Stylist not found",
-        });
-      }
-
-      // --------------------------------------------------
-      // ATTENDANCE
-      // --------------------------------------------------
-
-      const attendance =
-        await getAttendanceSalary({
-          stylistId: stylist,
-          month: finalMonth,
-        });
-
-      if (!attendance) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Unable to calculate attendance salary",
-        });
-      }
-
-      // --------------------------------------------------
-      // CALCULATE
-      // --------------------------------------------------
-
-      const calculation =
-        calculateSalary({
-          basicSalary:
-            attendance.basicSalary,
-
-          overtimeSalary:
-            attendance.overtimeSalary,
-
-          commission,
-
-          bonus,
-
-          advance,
-
-          deduction,
-        });
-
-      // --------------------------------------------------
-      // CREATE / UPDATE
-      // --------------------------------------------------
-
-      const salary =
-        await Salary.findOneAndUpdate(
-          {
-            stylist,
-            month: finalMonth,
-          },
-          {
-            $set: {
-              stylist,
-              month: finalMonth,
-
-              ...calculation,
-
-              paymentMethod:
-                String(
-                  paymentMethod
-                ).toUpperCase(),
-
-              notes:
-                String(notes || "").trim(),
-            },
-          },
-          {
-            new: true,
-            upsert: true,
-            runValidators: true,
-            setDefaultsOnInsert: true,
-          }
-        ).populate(
-          "stylist",
-          "name phone email status salaryType monthlySalary basicSalary8h overtimeRatePerHour standardWorkingHours"
-        );
-
-      return res.status(200).json({
-        success: true,
-
-        message:
-          "Salary saved successfully",
-
-        salary,
-
-        attendance,
-      });
-    } catch (error) {
-      console.error(
-        "CREATE SALARY ERROR:",
-        error
-      );
-
-      return res.status(500).json({
+    if (!salonId) {
+      return res.status(403).json({
         success: false,
         message:
-          "Failed to save salary",
-        error: error.message,
+          "Salon access is required",
       });
     }
-  };
+
+    const {
+      stylist,
+      month,
+      commission = 0,
+      bonus = 0,
+      advance = 0,
+      deduction = 0,
+      paymentMethod = "CASH",
+      notes = "",
+    } = req.body;
+
+    // --------------------------------------------------
+    // VALIDATE STYLIST
+    // --------------------------------------------------
+
+    if (
+      !stylist ||
+      !isValidObjectId(stylist)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Valid stylist is required",
+      });
+    }
+
+    // --------------------------------------------------
+    // MONTH
+    // --------------------------------------------------
+
+    const finalMonth =
+      month || getCurrentMonth();
+
+    if (!isValidMonth(finalMonth)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid month. Use YYYY-MM format",
+      });
+    }
+
+    // --------------------------------------------------
+    // GET STYLIST
+    // TENANT SCOPED
+    // --------------------------------------------------
+
+    const stylistData =
+      await Stylist.findOne({
+        _id: stylist,
+        salonId,
+      }).lean();
+
+    if (!stylistData) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Stylist not found in this salon",
+      });
+    }
+
+    // --------------------------------------------------
+    // ATTENDANCE
+    // TENANT SCOPED
+    // --------------------------------------------------
+
+    const attendance =
+      await getAttendanceSalary({
+        salonId,
+        stylistId: stylist,
+        month: finalMonth,
+      });
+
+    if (!attendance) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Unable to calculate attendance salary",
+      });
+    }
+
+    // --------------------------------------------------
+    // CALCULATE
+    // --------------------------------------------------
+
+    const calculation =
+      calculateSalary({
+        basicSalary:
+          attendance.basicSalary,
+
+        overtimeSalary:
+          attendance.overtimeSalary,
+
+        commission,
+
+        bonus,
+
+        advance,
+
+        deduction,
+      });
+
+    // --------------------------------------------------
+    // CREATE / UPDATE
+    // TENANT SCOPED
+    // --------------------------------------------------
+
+    const salary =
+      await Salary.findOneAndUpdate(
+        {
+          salonId,
+          stylist,
+          month: finalMonth,
+        },
+        {
+          $set: {
+            salonId,
+            stylist,
+            month: finalMonth,
+
+            ...calculation,
+
+            paymentMethod:
+              String(
+                paymentMethod
+              ).toUpperCase(),
+
+            notes:
+              String(notes || "").trim(),
+          },
+        },
+        {
+          new: true,
+          upsert: true,
+          runValidators: true,
+          setDefaultsOnInsert: true,
+        }
+      ).populate(
+        "stylist",
+        "name phone email status salaryType monthlySalary basicSalary8h overtimeRatePerHour standardWorkingHours"
+      );
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        "Salary saved successfully",
+
+      salary,
+
+      attendance,
+    });
+  } catch (error) {
+    console.error(
+      "CREATE SALARY ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to save salary",
+      error: error.message,
+    });
+  }
+};
 
 // ======================================================
 // GET ALL SALARIES
@@ -476,211 +517,228 @@ export const createSalary =
 // ?search=rahul
 // ======================================================
 
-export const getSalaries =
-  async (req, res) => {
-    try {
-      const {
-        month,
-        status,
-        search,
-      } = req.query;
+export const getSalaries = async (
+  req,
+  res
+) => {
+  try {
+    const salonId = getSalonId(req);
 
-      const finalMonth =
-        month || getCurrentMonth();
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message:
+          "Salon access is required",
+      });
+    }
 
-      if (!isValidMonth(finalMonth)) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid month. Use YYYY-MM",
-        });
+    const {
+      month,
+      status,
+      search,
+    } = req.query;
+
+    const finalMonth =
+      month || getCurrentMonth();
+
+    if (!isValidMonth(finalMonth)) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid month. Use YYYY-MM",
+      });
+    }
+
+    // IMPORTANT:
+    // Every salary query is restricted to salon.
+    const filter = {
+      salonId,
+      month: finalMonth,
+    };
+
+    // --------------------------------------------------
+    // PAYMENT STATUS
+    // --------------------------------------------------
+
+    if (status) {
+      const finalStatus =
+        String(status)
+          .trim()
+          .toUpperCase();
+
+      if (
+        ["PAID", "PENDING"].includes(
+          finalStatus
+        )
+      ) {
+        filter.paymentStatus =
+          finalStatus;
       }
+    }
 
-      const filter = {
-        month: finalMonth,
-      };
+    // --------------------------------------------------
+    // SEARCH STYLIST
+    // TENANT SCOPED
+    // --------------------------------------------------
 
-      // --------------------------------------------------
-      // PAYMENT STATUS
-      // --------------------------------------------------
+    let stylistIds = null;
 
-      if (status) {
-        const finalStatus =
-          String(status)
-            .trim()
-            .toUpperCase();
+    if (search) {
+      const searchText =
+        String(search).trim();
 
-        if (
-          ["PAID", "PENDING"].includes(
-            finalStatus
-          )
-        ) {
-          filter.paymentStatus =
-            finalStatus;
-        }
-      }
+      if (searchText) {
+        const escaped =
+          searchText.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&"
+          );
 
-      // --------------------------------------------------
-      // SEARCH STYLIST
-      // --------------------------------------------------
-
-      let stylistIds = null;
-
-      if (search) {
-        const searchText =
-          String(search).trim();
-
-        if (searchText) {
-          const escaped =
-            searchText.replace(
-              /[.*+?^${}()|[\]\\]/g,
-              "\\$&"
-            );
-
-          const stylists =
-            await Stylist.find({
-              $or: [
-                {
-                  name: {
-                    $regex: escaped,
-                    $options: "i",
-                  },
+        const stylists =
+          await Stylist.find({
+            salonId,
+            $or: [
+              {
+                name: {
+                  $regex: escaped,
+                  $options: "i",
                 },
-                {
-                  phone: {
-                    $regex: escaped,
-                    $options: "i",
-                  },
+              },
+              {
+                phone: {
+                  $regex: escaped,
+                  $options: "i",
                 },
-                {
-                  email: {
-                    $regex: escaped,
-                    $options: "i",
-                  },
+              },
+              {
+                email: {
+                  $regex: escaped,
+                  $options: "i",
                 },
-              ],
-            })
-              .select("_id")
-              .lean();
-
-          stylistIds =
-            stylists.map(
-              (item) => item._id
-            );
-
-          filter.stylist = {
-            $in: stylistIds,
-          };
-        }
-      }
-
-      // --------------------------------------------------
-      // GET SAVED SALARIES
-      // --------------------------------------------------
-
-      const salaries =
-        await Salary.find(filter)
-          .populate(
-            "stylist",
-            "name phone email status salaryType monthlySalary basicSalary8h overtimeRatePerHour"
-          )
-          .sort({
-            createdAt: -1,
+              },
+            ],
           })
-          .lean();
+            .select("_id")
+            .lean();
 
-      // --------------------------------------------------
-      // TOTALS
-      // --------------------------------------------------
+        stylistIds =
+          stylists.map(
+            (item) => item._id
+          );
 
-      const totals =
-        salaries.reduce(
-          (result, salary) => {
-            result.grossSalary +=
-              Number(
-                salary.grossSalary || 0
-              );
+        filter.stylist = {
+          $in: stylistIds,
+        };
+      }
+    }
 
-            result.netSalary +=
+    // --------------------------------------------------
+    // GET SAVED SALARIES
+    // --------------------------------------------------
+
+    const salaries =
+      await Salary.find(filter)
+        .populate(
+          "stylist",
+          "name phone email status salaryType monthlySalary basicSalary8h overtimeRatePerHour"
+        )
+        .sort({
+          createdAt: -1,
+        })
+        .lean();
+
+    // --------------------------------------------------
+    // TOTALS
+    // --------------------------------------------------
+
+    const totals =
+      salaries.reduce(
+        (result, salary) => {
+          result.grossSalary +=
+            Number(
+              salary.grossSalary || 0
+            );
+
+          result.netSalary +=
+            Number(
+              salary.netSalary || 0
+            );
+
+          if (
+            salary.paymentStatus ===
+            "PAID"
+          ) {
+            result.paid +=
               Number(
                 salary.netSalary || 0
               );
-
-            if (
-              salary.paymentStatus ===
-              "PAID"
-            ) {
-              result.paid +=
-                Number(
-                  salary.netSalary || 0
-                );
-            }
-
-            if (
-              salary.paymentStatus ===
-              "PENDING"
-            ) {
-              result.pending +=
-                Number(
-                  salary.netSalary || 0
-                );
-            }
-
-            return result;
-          },
-          {
-            grossSalary: 0,
-            netSalary: 0,
-            paid: 0,
-            pending: 0,
           }
-        );
 
-      return res.status(200).json({
-        success: true,
+          if (
+            salary.paymentStatus ===
+            "PENDING"
+          ) {
+            result.pending +=
+              Number(
+                salary.netSalary || 0
+              );
+          }
 
-        month: finalMonth,
-
-        count: salaries.length,
-
-        totals: {
-          grossSalary:
-            roundMoney(
-              totals.grossSalary
-            ),
-
-          netSalary:
-            roundMoney(
-              totals.netSalary
-            ),
-
-          paid:
-            roundMoney(
-              totals.paid
-            ),
-
-          pending:
-            roundMoney(
-              totals.pending
-            ),
+          return result;
         },
-
-        salaries,
-      });
-    } catch (error) {
-      console.error(
-        "GET SALARIES ERROR:",
-        error
+        {
+          grossSalary: 0,
+          netSalary: 0,
+          paid: 0,
+          pending: 0,
+        }
       );
 
-      return res.status(500).json({
-        success: false,
-        message:
-          "Failed to fetch salaries",
-        error: error.message,
-      });
-    }
-  };
+    return res.status(200).json({
+      success: true,
+
+      month: finalMonth,
+
+      count: salaries.length,
+
+      totals: {
+        grossSalary:
+          roundMoney(
+            totals.grossSalary
+          ),
+
+        netSalary:
+          roundMoney(
+            totals.netSalary
+          ),
+
+        paid:
+          roundMoney(
+            totals.paid
+          ),
+
+        pending:
+          roundMoney(
+            totals.pending
+          ),
+      },
+
+      salaries,
+    });
+  } catch (error) {
+    console.error(
+      "GET SALARIES ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to fetch salaries",
+      error: error.message,
+    });
+  }
+};
 
 // ======================================================
 // GET SINGLE SALARY
@@ -688,64 +746,81 @@ export const getSalaries =
 // GET /api/salaries/:id
 // ======================================================
 
-export const getSalaryById =
-  async (req, res) => {
-    try {
-      const { id } =
-        req.params;
+export const getSalaryById = async (
+  req,
+  res
+) => {
+  try {
+    const salonId = getSalonId(req);
 
-      if (
-        !isValidObjectId(id)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid salary ID",
-        });
-      }
-
-      const salary =
-        await Salary.findById(id)
-          .populate(
-            "stylist",
-            "name phone email status salaryType monthlySalary basicSalary8h overtimeRatePerHour standardWorkingHours"
-          )
-          .lean();
-
-      if (!salary) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Salary not found",
-        });
-      }
-
-      const attendance =
-        await getAttendanceSalary({
-          stylistId:
-            salary.stylist._id,
-          month: salary.month,
-        });
-
-      return res.status(200).json({
-        success: true,
-        salary,
-        attendance,
-      });
-    } catch (error) {
-      console.error(
-        "GET SALARY ERROR:",
-        error
-      );
-
-      return res.status(500).json({
+    if (!salonId) {
+      return res.status(403).json({
         success: false,
         message:
-          "Failed to fetch salary",
-        error: error.message,
+          "Salon access is required",
       });
     }
-  };
+
+    const { id } = req.params;
+
+    if (
+      !isValidObjectId(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid salary ID",
+      });
+    }
+
+    const salary =
+      await Salary.findOne({
+        _id: id,
+        salonId,
+      })
+        .populate(
+          "stylist",
+          "name phone email status salaryType monthlySalary basicSalary8h overtimeRatePerHour standardWorkingHours"
+        )
+        .lean();
+
+    if (!salary) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Salary not found",
+      });
+    }
+
+    const attendance =
+      await getAttendanceSalary({
+        salonId,
+        stylistId:
+          salary.stylist._id,
+        month: salary.month,
+      });
+
+    return res.status(200).json({
+      success: true,
+
+      salary,
+
+      attendance,
+    });
+  } catch (error) {
+    console.error(
+      "GET SALARY ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to fetch salary",
+      error: error.message,
+    });
+  }
+};
 
 // ======================================================
 // MARK SALARY AS PAID
@@ -753,131 +828,146 @@ export const getSalaryById =
 // PATCH /api/salaries/:id/pay
 // ======================================================
 
-export const markSalaryPaid =
-  async (req, res) => {
-    try {
-      const { id } =
-        req.params;
+export const markSalaryPaid = async (
+  req,
+  res
+) => {
+  try {
+    const salonId = getSalonId(req);
 
-      const {
-        paymentMethod = "CASH",
-        paymentDate,
-        notes,
-      } = req.body;
-
-      if (
-        !isValidObjectId(id)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid salary ID",
-        });
-      }
-
-      const allowedMethods = [
-        "CASH",
-        "BANK_TRANSFER",
-        "UPI",
-        "OTHER",
-      ];
-
-      const finalPaymentMethod =
-        String(paymentMethod)
-          .trim()
-          .toUpperCase();
-
-      if (
-        !allowedMethods.includes(
-          finalPaymentMethod
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid payment method",
-        });
-      }
-
-      const finalPaymentDate =
-        paymentDate
-          ? new Date(paymentDate)
-          : new Date();
-
-      if (
-        Number.isNaN(
-          finalPaymentDate.getTime()
-        )
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid payment date",
-        });
-      }
-
-      const salary =
-        await Salary.findByIdAndUpdate(
-          id,
-          {
-            $set: {
-              paymentStatus: "PAID",
-
-              paymentDate:
-                finalPaymentDate,
-
-              paymentMethod:
-                finalPaymentMethod,
-
-              ...(notes !== undefined
-                ? {
-                    notes:
-                      String(
-                        notes
-                      ).trim(),
-                  }
-                : {}),
-            },
-          },
-          {
-            new: true,
-            runValidators: true,
-          }
-        ).populate(
-          "stylist",
-          "name phone email status"
-        );
-
-      if (!salary) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Salary not found",
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-
-        message:
-          "Salary marked as paid",
-
-        salary,
-      });
-    } catch (error) {
-      console.error(
-        "MARK SALARY PAID ERROR:",
-        error
-      );
-
-      return res.status(500).json({
+    if (!salonId) {
+      return res.status(403).json({
         success: false,
         message:
-          "Failed to mark salary as paid",
-        error: error.message,
+          "Salon access is required",
       });
     }
-  };
+
+    const { id } = req.params;
+
+    const {
+      paymentMethod = "CASH",
+      paymentDate,
+      notes,
+    } = req.body;
+
+    if (
+      !isValidObjectId(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid salary ID",
+      });
+    }
+
+    const allowedMethods = [
+      "CASH",
+      "BANK_TRANSFER",
+      "UPI",
+      "OTHER",
+    ];
+
+    const finalPaymentMethod =
+      String(paymentMethod)
+        .trim()
+        .toUpperCase();
+
+    if (
+      !allowedMethods.includes(
+        finalPaymentMethod
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid payment method",
+      });
+    }
+
+    const finalPaymentDate =
+      paymentDate
+        ? new Date(paymentDate)
+        : new Date();
+
+    if (
+      Number.isNaN(
+        finalPaymentDate.getTime()
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid payment date",
+      });
+    }
+
+    // TENANT SCOPED UPDATE
+    const salary =
+      await Salary.findOneAndUpdate(
+        {
+          _id: id,
+          salonId,
+        },
+        {
+          $set: {
+            paymentStatus: "PAID",
+
+            paymentDate:
+              finalPaymentDate,
+
+            paymentMethod:
+              finalPaymentMethod,
+
+            ...(notes !== undefined
+              ? {
+                  notes:
+                    String(
+                      notes
+                    ).trim(),
+                }
+              : {}),
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+        }
+      ).populate(
+        "stylist",
+        "name phone email status"
+      );
+
+    if (!salary) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Salary not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        "Salary marked as paid",
+
+      salary,
+    });
+  } catch (error) {
+    console.error(
+      "MARK SALARY PAID ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to mark salary as paid",
+      error: error.message,
+    });
+  }
+};
 
 // ======================================================
 // MARK SALARY AS PENDING
@@ -885,72 +975,87 @@ export const markSalaryPaid =
 // PATCH /api/salaries/:id/pending
 // ======================================================
 
-export const markSalaryPending =
-  async (req, res) => {
-    try {
-      const { id } =
-        req.params;
+export const markSalaryPending = async (
+  req,
+  res
+) => {
+  try {
+    const salonId = getSalonId(req);
 
-      if (
-        !isValidObjectId(id)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid salary ID",
-        });
-      }
-
-      const salary =
-        await Salary.findByIdAndUpdate(
-          id,
-          {
-            $set: {
-              paymentStatus:
-                "PENDING",
-
-              paymentDate: null,
-            },
-          },
-          {
-            new: true,
-            runValidators: true,
-          }
-        ).populate(
-          "stylist",
-          "name phone email status"
-        );
-
-      if (!salary) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Salary not found",
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-
-        message:
-          "Salary marked as pending",
-
-        salary,
-      });
-    } catch (error) {
-      console.error(
-        "MARK SALARY PENDING ERROR:",
-        error
-      );
-
-      return res.status(500).json({
+    if (!salonId) {
+      return res.status(403).json({
         success: false,
         message:
-          "Failed to update salary status",
-        error: error.message,
+          "Salon access is required",
       });
     }
-  };
+
+    const { id } = req.params;
+
+    if (
+      !isValidObjectId(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid salary ID",
+      });
+    }
+
+    // TENANT SCOPED UPDATE
+    const salary =
+      await Salary.findOneAndUpdate(
+        {
+          _id: id,
+          salonId,
+        },
+        {
+          $set: {
+            paymentStatus:
+              "PENDING",
+
+            paymentDate: null,
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+        }
+      ).populate(
+        "stylist",
+        "name phone email status"
+      );
+
+    if (!salary) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Salary not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        "Salary marked as pending",
+
+      salary,
+    });
+  } catch (error) {
+    console.error(
+      "MARK SALARY PENDING ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to update salary status",
+      error: error.message,
+    });
+  }
+};
 
 // ======================================================
 // DELETE SALARY
@@ -958,52 +1063,64 @@ export const markSalaryPending =
 // DELETE /api/salaries/:id
 // ======================================================
 
-export const deleteSalary =
-  async (req, res) => {
-    try {
-      const { id } =
-        req.params;
+export const deleteSalary = async (
+  req,
+  res
+) => {
+  try {
+    const salonId = getSalonId(req);
 
-      if (
-        !isValidObjectId(id)
-      ) {
-        return res.status(400).json({
-          success: false,
-          message:
-            "Invalid salary ID",
-        });
-      }
-
-      const salary =
-        await Salary.findByIdAndDelete(
-          id
-        );
-
-      if (!salary) {
-        return res.status(404).json({
-          success: false,
-          message:
-            "Salary not found",
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-
-        message:
-          "Salary deleted successfully",
-      });
-    } catch (error) {
-      console.error(
-        "DELETE SALARY ERROR:",
-        error
-      );
-
-      return res.status(500).json({
+    if (!salonId) {
+      return res.status(403).json({
         success: false,
         message:
-          "Failed to delete salary",
-        error: error.message,
+          "Salon access is required",
       });
     }
-  };
+
+    const { id } = req.params;
+
+    if (
+      !isValidObjectId(id)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Invalid salary ID",
+      });
+    }
+
+    // TENANT SCOPED DELETE
+    const salary =
+      await Salary.findOneAndDelete({
+        _id: id,
+        salonId,
+      });
+
+    if (!salary) {
+      return res.status(404).json({
+        success: false,
+        message:
+          "Salary not found",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message:
+        "Salary deleted successfully",
+    });
+  } catch (error) {
+    console.error(
+      "DELETE SALARY ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to delete salary",
+      error: error.message,
+    });
+  }
+};

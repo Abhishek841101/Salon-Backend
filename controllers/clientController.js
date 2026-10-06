@@ -1,3 +1,4 @@
+
 import Client from "../models/Client.js";
 import Bill from "../models/Bill.js";
 import cloudinary from "../config/cloudinary.js";
@@ -6,7 +7,10 @@ import cloudinary from "../config/cloudinary.js";
 // CLOUDINARY BUFFER UPLOAD
 // ========================================
 
-const uploadToCloudinary = (buffer, folder = "salon/clients") => {
+const uploadToCloudinary = (
+  buffer,
+  folder = "salon/clients"
+) => {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       {
@@ -44,261 +48,17 @@ const deleteFromCloudinary = async (publicId) => {
 };
 
 // ========================================
+// GET SALON ID
+// ========================================
+
+const getSalonId = (req) => {
+  return req.user?.salonId || null;
+};
+
+// ========================================
 // ADD CLIENT
 // ========================================
 
-// export const createClient = async (req, res) => {
-//   try {
-//     const {
-//       name,
-//       phone,
-//       email,
-//       gender,
-//       dateOfBirth,
-//       address,
-//       notes,
-//     } = req.body;
-
-//     // Required fields
-//     if (!name || !phone) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Client name and phone number are required",
-//       });
-//     }
-
-//     const normalizedPhone = phone.trim();
-
-//     // Check duplicate phone
-//     const existingClient = await Client.findOne({
-//       phone: normalizedPhone,
-//     });
-
-//     if (existingClient) {
-//       return res.status(409).json({
-//         success: false,
-//         message:
-//           "A client with this phone number already exists",
-//         client: existingClient,
-//       });
-//     }
-
-//     // ========================================
-//     // PROFILE IMAGE
-//     // ========================================
-
-//     let profileImage = {
-//       url: "",
-//       publicId: "",
-//     };
-
-//     if (req.file) {
-//       const uploadedImage = await uploadToCloudinary(
-//         req.file.buffer
-//       );
-
-//       profileImage = {
-//         url: uploadedImage.secure_url,
-//         publicId: uploadedImage.public_id,
-//       };
-//     }
-
-//     // ========================================
-//     // CREATE CLIENT
-//     // ========================================
-
-//     const client = await Client.create({
-//       name: name.trim(),
-//       phone: normalizedPhone,
-//       email: email?.trim().toLowerCase() || "",
-//       gender: gender || "",
-//       dateOfBirth: dateOfBirth || null,
-//       address: address?.trim() || "",
-//       notes: notes?.trim() || "",
-//       profileImage,
-//     });
-
-//     return res.status(201).json({
-//       success: true,
-//       message: "Client added successfully",
-//       client,
-//     });
-//   } catch (error) {
-//     console.error("CREATE CLIENT ERROR:", error);
-
-//     return res.status(500).json({
-//       success: false,
-//       message: "Failed to create client",
-//       error: error.message,
-//     });
-//   }
-// };
-// export const createClient = async (req, res) => {
-//   try {
-//     console.log("\n========================================");
-//     console.log("          CREATE CLIENT");
-//     console.log("========================================");
-
-//     console.log("REQ BODY :", req.body);
-//     console.log("REQ FILE :", req.file ? "IMAGE RECEIVED" : "NO IMAGE");
-
-//     // ========================================
-//     // SAFE BODY
-//     // ========================================
-
-//     const body = req.body || {};
-
-//     const {
-//       name,
-//       phone,
-//       email = "",
-//       gender = "",
-//       dateOfBirth = null,
-//       address = "",
-//       notes = "",
-//     } = body;
-
-//     // ========================================
-//     // REQUIRED FIELDS
-//     // ========================================
-
-//     if (!name || !String(name).trim()) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Client name is required",
-//       });
-//     }
-
-//     if (!phone || !String(phone).trim()) {
-//       return res.status(400).json({
-//         success: false,
-//         message: "Client phone number is required",
-//       });
-//     }
-
-//     // ========================================
-//     // CHECK DUPLICATE PHONE
-//     // ========================================
-
-//     const existingClient = await Client.findOne({
-//       phone: String(phone).trim(),
-//     });
-
-//     if (existingClient) {
-//       return res.status(409).json({
-//         success: false,
-//         message: "Client with this phone number already exists",
-//       });
-//     }
-
-//     // ========================================
-//     // IMAGE
-//     // ========================================
-
-//     let profileImage = {
-//       url: "",
-//       publicId: "",
-//     };
-
-//     if (req.file) {
-//       console.log("Uploading image to Cloudinary...");
-
-//       /*
-//         IMPORTANT:
-//         Yahan apna existing Cloudinary upload function use karo.
-        
-//         Example:
-//         const result = await uploadToCloudinary(req.file.buffer);
-
-//         profileImage = {
-//           url: result.secure_url,
-//           publicId: result.public_id,
-//         };
-//       */
-
-//       const result = await uploadToCloudinary(req.file.buffer);
-
-//       profileImage = {
-//         url: result.secure_url,
-//         publicId: result.public_id,
-//       };
-
-//       console.log("Cloudinary URL :", result.secure_url);
-//       console.log("Cloudinary ID  :", result.public_id);
-//     }
-
-//     // ========================================
-//     // CREATE CLIENT
-//     // ========================================
-
-//     const client = await Client.create({
-//       name: String(name).trim(),
-
-//       phone: String(phone).trim(),
-
-//       email: email
-//         ? String(email).trim().toLowerCase()
-//         : "",
-
-//       gender: gender || "",
-
-//       dateOfBirth:
-//         dateOfBirth && dateOfBirth !== ""
-//           ? new Date(dateOfBirth)
-//           : null,
-
-//       address: address
-//         ? String(address).trim()
-//         : "",
-
-//       profileImage,
-
-//       notes: notes
-//         ? String(notes).trim()
-//         : "",
-
-//       isActive: true,
-
-//       lastVisitAt: null,
-
-//       totalVisits: 0,
-
-//       totalSpent: 0,
-//     });
-
-//     // ========================================
-//     // RESPONSE
-//     // ========================================
-
-//     console.log("CLIENT CREATED :", client._id);
-
-//     return res.status(201).json({
-//       success: true,
-//       message: "Client created successfully",
-//       client,
-//     });
-//   } catch (error) {
-//     console.error("\n========================================");
-//     console.error("       CREATE CLIENT ERROR");
-//     console.error("========================================");
-//     console.error(error);
-//     console.error("========================================");
-
-//     // Duplicate phone
-//     if (error.code === 11000) {
-//       return res.status(409).json({
-//         success: false,
-//         message: "Client with this phone number already exists",
-//       });
-//     }
-
-//     return res.status(500).json({
-//       success: false,
-//       message: "Failed to create client",
-//       error: error.message,
-//     });
-//   }
-// };
 export const createClient = async (req, res) => {
   try {
     console.log("\n========================================");
@@ -306,7 +66,23 @@ export const createClient = async (req, res) => {
     console.log("========================================");
 
     console.log("REQ BODY :", req.body);
-    console.log("REQ FILE :", req.file ? "IMAGE RECEIVED" : "NO IMAGE");
+    console.log(
+      "REQ FILE :",
+      req.file ? "IMAGE RECEIVED" : "NO IMAGE"
+    );
+
+    // ========================================
+    // AUTH / SALON
+    // ========================================
+
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon ID is missing from authenticated user",
+      });
+    }
 
     // ========================================
     // SAFE BODY
@@ -343,23 +119,28 @@ export const createClient = async (req, res) => {
       });
     }
 
+    const normalizedPhone = String(phone).trim();
+
     // ========================================
     // CHECK DUPLICATE PHONE
+    // SAME SALON ONLY
     // ========================================
 
     const existingClient = await Client.findOne({
-      phone: String(phone).trim(),
+      salonId,
+      phone: normalizedPhone,
     });
 
     if (existingClient) {
       return res.status(409).json({
         success: false,
-        message: "Client with this phone number already exists",
+        message:
+          "Client with this phone number already exists",
       });
     }
 
     // ========================================
-    // IMAGE
+    // PROFILE IMAGE
     // ========================================
 
     let profileImage = {
@@ -368,17 +149,28 @@ export const createClient = async (req, res) => {
     };
 
     if (req.file) {
-      console.log("Uploading image to Cloudinary...");
+      console.log(
+        "Uploading image to Cloudinary..."
+      );
 
-      const result = await uploadToCloudinary(req.file.buffer);
+      const result = await uploadToCloudinary(
+        req.file.buffer
+      );
 
       profileImage = {
         url: result.secure_url,
         publicId: result.public_id,
       };
 
-      console.log("Cloudinary URL :", result.secure_url);
-      console.log("Cloudinary ID  :", result.public_id);
+      console.log(
+        "Cloudinary URL :",
+        result.secure_url
+      );
+
+      console.log(
+        "Cloudinary ID  :",
+        result.public_id
+      );
     }
 
     // ========================================
@@ -386,9 +178,11 @@ export const createClient = async (req, res) => {
     // ========================================
 
     const client = await Client.create({
+      salonId,
+
       name: String(name).trim(),
 
-      phone: String(phone).trim(),
+      phone: normalizedPhone,
 
       email: email
         ? String(email).trim().toLowerCase()
@@ -401,7 +195,6 @@ export const createClient = async (req, res) => {
           ? new Date(dateOfBirth)
           : null,
 
-      // OPTIONAL ANNIVERSARY
       anniversaryDate:
         anniversaryDate && anniversaryDate !== ""
           ? new Date(anniversaryDate)
@@ -430,7 +223,10 @@ export const createClient = async (req, res) => {
     // RESPONSE
     // ========================================
 
-    console.log("CLIENT CREATED :", client._id);
+    console.log(
+      "CLIENT CREATED :",
+      client._id
+    );
 
     return res.status(201).json({
       success: true,
@@ -438,17 +234,29 @@ export const createClient = async (req, res) => {
       client,
     });
   } catch (error) {
-    console.error("\n========================================");
-    console.error("       CREATE CLIENT ERROR");
-    console.error("========================================");
+    console.error(
+      "\n========================================"
+    );
+    console.error(
+      "       CREATE CLIENT ERROR"
+    );
+    console.error(
+      "========================================"
+    );
     console.error(error);
-    console.error("========================================");
+    console.error(
+      "========================================"
+    );
 
-    // Duplicate phone
+    // ========================================
+    // DUPLICATE INDEX ERROR
+    // ========================================
+
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Client with this phone number already exists",
+        message:
+          "Client with this phone number already exists",
       });
     }
 
@@ -459,12 +267,22 @@ export const createClient = async (req, res) => {
     });
   }
 };
+
 // ========================================
 // GET ALL CLIENTS
 // ========================================
 
 export const getClients = async (req, res) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon ID is missing from authenticated user",
+      });
+    }
+
     const {
       search = "",
       page = 1,
@@ -472,25 +290,41 @@ export const getClients = async (req, res) => {
       status = "active",
     } = req.query;
 
-    const currentPage = Math.max(Number(page), 1);
+    const currentPage = Math.max(
+      Number(page) || 1,
+      1
+    );
 
     const perPage = Math.min(
-      Math.max(Number(limit), 1),
+      Math.max(Number(limit) || 20, 1),
       100
     );
 
-    const query = {};
+    // ========================================
+    // IMPORTANT:
+    // ALWAYS FILTER BY CURRENT SALON
+    // ========================================
 
-    // Status filter
+    const query = {
+      salonId,
+    };
+
+    // ========================================
+    // STATUS FILTER
+    // ========================================
+
     if (status === "active") {
       query.isActive = true;
     } else if (status === "inactive") {
       query.isActive = false;
     }
 
-    // Search
-    if (search.trim()) {
-      const searchText = search.trim();
+    // ========================================
+    // SEARCH
+    // ========================================
+
+    if (String(search).trim()) {
+      const searchText = String(search).trim();
 
       query.$or = [
         {
@@ -514,16 +348,26 @@ export const getClients = async (req, res) => {
       ];
     }
 
-    const skip = (currentPage - 1) * perPage;
+    const skip =
+      (currentPage - 1) * perPage;
 
-    const [clients, total] = await Promise.all([
-      Client.find(query)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(perPage),
+    // ========================================
+    // FETCH CLIENTS
+    // ========================================
 
-      Client.countDocuments(query),
-    ]);
+    const [clients, total] =
+      await Promise.all([
+        Client.find(query)
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(perPage),
+
+        Client.countDocuments(query),
+      ]);
+
+    const totalPages = Math.ceil(
+      total / perPage
+    );
 
     return res.status(200).json({
       success: true,
@@ -533,18 +377,23 @@ export const getClients = async (req, res) => {
         total,
         page: currentPage,
         limit: perPage,
-        totalPages: Math.ceil(total / perPage),
+        totalPages,
         hasNextPage:
-          currentPage < Math.ceil(total / perPage),
-        hasPreviousPage: currentPage > 1,
+          currentPage < totalPages,
+        hasPreviousPage:
+          currentPage > 1,
       },
     });
   } catch (error) {
-    console.error("GET CLIENTS ERROR:", error);
+    console.error(
+      "GET CLIENTS ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
       message: "Failed to fetch clients",
+      error: error.message,
     });
   }
 };
@@ -553,11 +402,31 @@ export const getClients = async (req, res) => {
 // GET SINGLE CLIENT
 // ========================================
 
-export const getClientById = async (req, res) => {
+export const getClientById = async (
+  req,
+  res
+) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon ID is missing from authenticated user",
+      });
+    }
+
     const { id } = req.params;
 
-    const client = await Client.findById(id);
+    // ========================================
+    // IMPORTANT:
+    // ID + SALON ID
+    // ========================================
+
+    const client = await Client.findOne({
+      _id: id,
+      salonId,
+    });
 
     if (!client) {
       return res.status(404).json({
@@ -571,11 +440,15 @@ export const getClientById = async (req, res) => {
       client,
     });
   } catch (error) {
-    console.error("GET CLIENT ERROR:", error);
+    console.error(
+      "GET CLIENT ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
       message: "Failed to fetch client",
+      error: error.message,
     });
   }
 };
@@ -584,11 +457,30 @@ export const getClientById = async (req, res) => {
 // GET CLIENT VISIT HISTORY
 // ========================================
 
-export const getClientHistory = async (req, res) => {
+export const getClientHistory = async (
+  req,
+  res
+) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon ID is missing from authenticated user",
+      });
+    }
+
     const { id } = req.params;
 
-    const client = await Client.findById(id);
+    // ========================================
+    // FIND CLIENT IN CURRENT SALON
+    // ========================================
+
+    const client = await Client.findOne({
+      _id: id,
+      salonId,
+    });
 
     if (!client) {
       return res.status(404).json({
@@ -597,7 +489,13 @@ export const getClientHistory = async (req, res) => {
       });
     }
 
+    // ========================================
+    // FIND BILLS
+    // SAME SALON + SAME CLIENT
+    // ========================================
+
     const bills = await Bill.find({
+      salonId,
       client: id,
     })
       .sort({
@@ -607,27 +505,42 @@ export const getClientHistory = async (req, res) => {
         "invoiceNumber items subtotal discount tax grandTotal paymentMethod paymentStatus notes billDate createdAt"
       );
 
+    // ========================================
+    // FORMAT VISITS
+    // ========================================
+
     const visits = bills.map((bill) => ({
       billId: bill._id,
-      invoiceNumber: bill.invoiceNumber,
+
+      invoiceNumber:
+        bill.invoiceNumber,
+
       date: bill.billDate,
 
-      services: bill.items.map((item) => ({
-        serviceId: item.service,
-        serviceName: item.serviceName,
-        price: item.price,
-        quantity: item.quantity,
-        duration: item.duration,
-        total: item.total,
-      })),
+      services: (bill.items || []).map(
+        (item) => ({
+          serviceId: item.service,
+          serviceName: item.serviceName,
+          price: item.price,
+          quantity: item.quantity,
+          duration: item.duration,
+          total: item.total,
+        })
+      ),
 
       subtotal: bill.subtotal,
+
       discount: bill.discount,
+
       tax: bill.tax,
+
       grandTotal: bill.grandTotal,
 
-      paymentMethod: bill.paymentMethod,
-      paymentStatus: bill.paymentStatus,
+      paymentMethod:
+        bill.paymentMethod,
+
+      paymentStatus:
+        bill.paymentStatus,
 
       notes: bill.notes,
     }));
@@ -641,20 +554,34 @@ export const getClientHistory = async (req, res) => {
         phone: client.phone,
         email: client.email,
         gender: client.gender,
-        dateOfBirth: client.dateOfBirth,
+        dateOfBirth:
+          client.dateOfBirth,
+        anniversaryDate:
+          client.anniversaryDate,
         address: client.address,
-        profileImage: client.profileImage,
+        profileImage:
+          client.profileImage,
         isActive: client.isActive,
-        lastVisitAt: client.lastVisitAt,
-        totalVisits: client.totalVisits,
-        totalSpent: client.totalSpent,
+        lastVisitAt:
+          client.lastVisitAt,
+        totalVisits:
+          client.totalVisits,
+        totalSpent:
+          client.totalSpent,
       },
 
       summary: {
-        totalVisits: client.totalVisits,
-        totalSpent: client.totalSpent,
-        lastVisitAt: client.lastVisitAt,
-        totalBills: bills.length,
+        totalVisits:
+          client.totalVisits,
+
+        totalSpent:
+          client.totalSpent,
+
+        lastVisitAt:
+          client.lastVisitAt,
+
+        totalBills:
+          bills.length,
       },
 
       visits,
@@ -667,7 +594,9 @@ export const getClientHistory = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to fetch client history",
+      message:
+        "Failed to fetch client history",
+      error: error.message,
     });
   }
 };
@@ -676,8 +605,20 @@ export const getClientHistory = async (req, res) => {
 // UPDATE CLIENT
 // ========================================
 
-export const updateClient = async (req, res) => {
+export const updateClient = async (
+  req,
+  res
+) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon ID is missing from authenticated user",
+      });
+    }
+
     const { id } = req.params;
 
     const {
@@ -686,12 +627,21 @@ export const updateClient = async (req, res) => {
       email,
       gender,
       dateOfBirth,
+      anniversaryDate,
       address,
       notes,
       isActive,
     } = req.body;
 
-    const client = await Client.findById(id);
+    // ========================================
+    // FIND CLIENT
+    // CURRENT SALON ONLY
+    // ========================================
+
+    const client = await Client.findOne({
+      _id: id,
+      salonId,
+    });
 
     if (!client) {
       return res.status(404).json({
@@ -705,12 +655,27 @@ export const updateClient = async (req, res) => {
     // ========================================
 
     if (phone !== undefined) {
-      const normalizedPhone = phone.trim();
+      const normalizedPhone =
+        String(phone).trim();
 
-      const phoneExists = await Client.findOne({
-        phone: normalizedPhone,
-        _id: { $ne: id },
-      });
+      if (!normalizedPhone) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Client phone number cannot be empty",
+        });
+      }
+
+      // ========================================
+      // SAME SALON ONLY
+      // ========================================
+
+      const phoneExists =
+        await Client.findOne({
+          salonId,
+          phone: normalizedPhone,
+          _id: { $ne: id },
+        });
 
       if (phoneExists) {
         return res.status(409).json({
@@ -720,39 +685,102 @@ export const updateClient = async (req, res) => {
         });
       }
 
-      client.phone = normalizedPhone;
+      client.phone =
+        normalizedPhone;
     }
 
     // ========================================
-    // UPDATE FIELDS
+    // UPDATE NAME
     // ========================================
 
     if (name !== undefined) {
-      client.name = name.trim();
+      const normalizedName =
+        String(name).trim();
+
+      if (!normalizedName) {
+        return res.status(400).json({
+          success: false,
+          message:
+            "Client name cannot be empty",
+        });
+      }
+
+      client.name =
+        normalizedName;
     }
+
+    // ========================================
+    // UPDATE EMAIL
+    // ========================================
 
     if (email !== undefined) {
-      client.email = email.trim().toLowerCase();
+      client.email = email
+        ? String(email)
+            .trim()
+            .toLowerCase()
+        : "";
     }
+
+    // ========================================
+    // UPDATE GENDER
+    // ========================================
 
     if (gender !== undefined) {
-      client.gender = gender;
+      client.gender =
+        gender || "";
     }
+
+    // ========================================
+    // UPDATE DATE OF BIRTH
+    // ========================================
 
     if (dateOfBirth !== undefined) {
-      client.dateOfBirth = dateOfBirth || null;
+      client.dateOfBirth =
+        dateOfBirth
+          ? new Date(dateOfBirth)
+          : null;
     }
+
+    // ========================================
+    // UPDATE ANNIVERSARY DATE
+    // ========================================
+
+    if (
+      anniversaryDate !== undefined
+    ) {
+      client.anniversaryDate =
+        anniversaryDate
+          ? new Date(anniversaryDate)
+          : null;
+    }
+
+    // ========================================
+    // UPDATE ADDRESS
+    // ========================================
 
     if (address !== undefined) {
-      client.address = address.trim();
+      client.address = address
+        ? String(address).trim()
+        : "";
     }
+
+    // ========================================
+    // UPDATE NOTES
+    // ========================================
 
     if (notes !== undefined) {
-      client.notes = notes.trim();
+      client.notes = notes
+        ? String(notes).trim()
+        : "";
     }
 
+    // ========================================
+    // UPDATE ACTIVE STATUS
+    // ========================================
+
     if (isActive !== undefined) {
-      client.isActive = Boolean(isActive);
+      client.isActive =
+        Boolean(isActive);
     }
 
     // ========================================
@@ -761,43 +789,63 @@ export const updateClient = async (req, res) => {
 
     if (req.file) {
       // Upload new image
-      const uploadedImage = await uploadToCloudinary(
-        req.file.buffer
-      );
+      const uploadedImage =
+        await uploadToCloudinary(
+          req.file.buffer
+        );
 
       // Delete old image
-      if (client.profileImage?.publicId) {
+      if (
+        client.profileImage?.publicId
+      ) {
         await deleteFromCloudinary(
           client.profileImage.publicId
         );
       }
 
+      // Save new image
       client.profileImage = {
-        url: uploadedImage.secure_url,
-        publicId: uploadedImage.public_id,
+        url:
+          uploadedImage.secure_url,
+        publicId:
+          uploadedImage.public_id,
       };
     }
+
+    // ========================================
+    // SAVE
+    // ========================================
 
     await client.save();
 
     return res.status(200).json({
       success: true,
-      message: "Client updated successfully",
+      message:
+        "Client updated successfully",
       client,
     });
   } catch (error) {
-    console.error("UPDATE CLIENT ERROR:", error);
+    console.error(
+      "UPDATE CLIENT ERROR:",
+      error
+    );
+
+    // ========================================
+    // DUPLICATE INDEX ERROR
+    // ========================================
 
     if (error.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Phone number already exists",
+        message:
+          "Phone number already exists in this salon",
       });
     }
 
     return res.status(500).json({
       success: false,
-      message: "Failed to update client",
+      message:
+        "Failed to update client",
       error: error.message,
     });
   }
@@ -807,11 +855,31 @@ export const updateClient = async (req, res) => {
 // DEACTIVATE CLIENT
 // ========================================
 
-export const deactivateClient = async (req, res) => {
+export const deactivateClient = async (
+  req,
+  res
+) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon ID is missing from authenticated user",
+      });
+    }
+
     const { id } = req.params;
 
-    const client = await Client.findById(id);
+    // ========================================
+    // CURRENT SALON ONLY
+    // ========================================
+
+    const client =
+      await Client.findOne({
+        _id: id,
+        salonId,
+      });
 
     if (!client) {
       return res.status(404).json({
@@ -826,7 +894,8 @@ export const deactivateClient = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Client deactivated successfully",
+      message:
+        "Client deactivated successfully",
       client,
     });
   } catch (error) {
@@ -837,7 +906,9 @@ export const deactivateClient = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to deactivate client",
+      message:
+        "Failed to deactivate client",
+      error: error.message,
     });
   }
 };
@@ -846,11 +917,31 @@ export const deactivateClient = async (req, res) => {
 // REACTIVATE CLIENT
 // ========================================
 
-export const reactivateClient = async (req, res) => {
+export const reactivateClient = async (
+  req,
+  res
+) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon ID is missing from authenticated user",
+      });
+    }
+
     const { id } = req.params;
 
-    const client = await Client.findById(id);
+    // ========================================
+    // CURRENT SALON ONLY
+    // ========================================
+
+    const client =
+      await Client.findOne({
+        _id: id,
+        salonId,
+      });
 
     if (!client) {
       return res.status(404).json({
@@ -865,7 +956,8 @@ export const reactivateClient = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Client reactivated successfully",
+      message:
+        "Client reactivated successfully",
       client,
     });
   } catch (error) {
@@ -876,7 +968,9 @@ export const reactivateClient = async (req, res) => {
 
     return res.status(500).json({
       success: false,
-      message: "Failed to reactivate client",
+      message:
+        "Failed to reactivate client",
+      error: error.message,
     });
   }
 };
@@ -885,11 +979,31 @@ export const reactivateClient = async (req, res) => {
 // DELETE CLIENT PERMANENTLY
 // ========================================
 
-export const deleteClient = async (req, res) => {
+export const deleteClient = async (
+  req,
+  res
+) => {
   try {
+    const salonId = getSalonId(req);
+
+    if (!salonId) {
+      return res.status(403).json({
+        success: false,
+        message: "Salon ID is missing from authenticated user",
+      });
+    }
+
     const { id } = req.params;
 
-    const client = await Client.findById(id);
+    // ========================================
+    // CURRENT SALON ONLY
+    // ========================================
+
+    const client =
+      await Client.findOne({
+        _id: id,
+        salonId,
+      });
 
     if (!client) {
       return res.status(404).json({
@@ -898,25 +1012,43 @@ export const deleteClient = async (req, res) => {
       });
     }
 
-    // Delete Cloudinary profile image
-    if (client.profileImage?.publicId) {
+    // ========================================
+    // DELETE CLOUDINARY IMAGE
+    // ========================================
+
+    if (
+      client.profileImage?.publicId
+    ) {
       await deleteFromCloudinary(
         client.profileImage.publicId
       );
     }
 
-    await Client.findByIdAndDelete(id);
+    // ========================================
+    // DELETE CLIENT
+    // ========================================
+
+    await Client.deleteOne({
+      _id: id,
+      salonId,
+    });
 
     return res.status(200).json({
       success: true,
-      message: "Client deleted permanently",
+      message:
+        "Client deleted permanently",
     });
   } catch (error) {
-    console.error("DELETE CLIENT ERROR:", error);
+    console.error(
+      "DELETE CLIENT ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
-      message: "Failed to delete client",
+      message:
+        "Failed to delete client",
+      error: error.message,
     });
   }
 };
