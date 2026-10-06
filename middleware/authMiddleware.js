@@ -23,7 +23,9 @@ export const protectAuth = async (req, res, next) => {
       });
     }
 
-    const token = authHeader.split(" ")[1];
+    const token = authHeader
+      .substring(7)
+      .trim();
 
     if (!token) {
       return res.status(401).json({
@@ -32,12 +34,22 @@ export const protectAuth = async (req, res, next) => {
       });
     }
 
+    // ========================================
+    // VERIFY TOKEN
+    // ========================================
+
     const decoded = jwt.verify(
       token,
       process.env.JWT_SECRET
     );
 
-    const user = await User.findById(decoded.id);
+    // ========================================
+    // FIND USER
+    // ========================================
+
+    const user = await User.findById(
+      decoded.id
+    );
 
     if (!user) {
       return res.status(401).json({
@@ -46,6 +58,10 @@ export const protectAuth = async (req, res, next) => {
       });
     }
 
+    // ========================================
+    // CHECK ACTIVE ACCOUNT
+    // ========================================
+
     if (!user.isActive) {
       return res.status(403).json({
         success: false,
@@ -53,26 +69,75 @@ export const protectAuth = async (req, res, next) => {
       });
     }
 
+    // ========================================
+    // ATTACH USER
+    // ========================================
+
     req.user = user;
     req.auth = decoded;
 
     next();
-  } catch (error) {
-    console.error("AUTH ERROR:", error.message);
 
-    if (error.name === "TokenExpiredError") {
+  } catch (error) {
+    // ========================================
+    // DETAILED AUTH ERROR
+    // ========================================
+
+    console.error(
+      "================================"
+    );
+
+    console.error(
+      "AUTH ERROR NAME:",
+      error.name
+    );
+
+    console.error(
+      "AUTH ERROR MESSAGE:",
+      error.message
+    );
+
+    console.error(
+      "AUTH ERROR STACK:",
+      error.stack
+    );
+
+    console.error(
+      "================================"
+    );
+
+    // ========================================
+    // TOKEN EXPIRED
+    // ========================================
+
+    if (
+      error.name === "TokenExpiredError"
+    ) {
       return res.status(401).json({
         success: false,
-        message: "Token has expired. Please login again",
+        code: "TOKEN_EXPIRED",
+        message:
+          "Token has expired. Please login again",
       });
     }
 
-    if (error.name === "JsonWebTokenError") {
+    // ========================================
+    // INVALID TOKEN
+    // ========================================
+
+    if (
+      error.name === "JsonWebTokenError"
+    ) {
       return res.status(401).json({
         success: false,
+        code: "INVALID_TOKEN",
         message: "Invalid token",
       });
     }
+
+    // ========================================
+    // OTHER AUTH ERROR
+    // ========================================
 
     return res.status(401).json({
       success: false,
@@ -92,11 +157,14 @@ export const requireAdmin = (
 ) => {
   if (
     !req.user ||
-    !["admin", "owner"].includes(req.user.role)
+    !["admin", "owner"].includes(
+      req.user.role
+    )
   ) {
     return res.status(403).json({
       success: false,
-      message: "Salon Admin access required",
+      message:
+        "Salon Admin access required",
     });
   }
 
@@ -118,7 +186,8 @@ export const requireSuperAdmin = (
   ) {
     return res.status(403).json({
       success: false,
-      message: "Super Admin access required",
+      message:
+        "Super Admin access required",
     });
   }
 
@@ -136,9 +205,11 @@ export const requireAdminOrSuperAdmin = (
 ) => {
   if (
     !req.user ||
-    !["admin", "owner", "superadmin"].includes(
-      req.user.role
-    )
+    ![
+      "admin",
+      "owner",
+      "superadmin",
+    ].includes(req.user.role)
   ) {
     return res.status(403).json({
       success: false,
