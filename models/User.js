@@ -1,5 +1,47 @@
 import mongoose from "mongoose";
 
+const subscriptionSchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: ["trial", "active", "expired", "cancelled"],
+      default: "trial",
+    },
+
+    plan: {
+      type: String,
+      enum: ["basic", "professional", "premium", null],
+      default: null,
+    },
+
+    trialStartDate: {
+      type: Date,
+      default: null,
+    },
+
+    trialEndDate: {
+      type: Date,
+      default: null,
+    },
+
+    startDate: {
+      type: Date,
+      default: null,
+    },
+
+    endDate: {
+      type: Date,
+      default: null,
+    },
+
+    amount: {
+      type: Number,
+      default: 0,
+    },
+  },
+  { _id: false }
+);
+
 const userSchema = new mongoose.Schema(
   {
     name: {
@@ -21,25 +63,38 @@ const userSchema = new mongoose.Schema(
     phone: {
       type: String,
       required: [true, "Phone number is required"],
+      unique: true,
       trim: true,
     },
 
     password: {
       type: String,
       required: [true, "Password is required"],
-      minlength: [6, "Password must be at least 6 characters"],
       select: false,
     },
 
     role: {
       type: String,
-      enum: ["admin", "owner", "staff"],
-      default: "owner",
+      enum: ["superadmin", "admin", "owner", "staff"],
+      default: "admin",
+    },
+
+    salonId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Salon",
+      default: null,
     },
 
     isActive: {
       type: Boolean,
       default: true,
+    },
+
+    subscription: {
+      type: subscriptionSchema,
+      default: () => ({
+        status: "trial",
+      }),
     },
   },
   {

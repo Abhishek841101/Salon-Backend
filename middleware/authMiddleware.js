@@ -1,10 +1,11 @@
 import jwt from "jsonwebtoken";
+import User from "../models/User.js";
 
 // ========================================
-// VERIFY ADMIN JWT
+// VERIFY JWT
 // ========================================
 
-export const protectAdmin = (req, res, next) => {
+export const protectAuth = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
 
@@ -36,15 +37,24 @@ export const protectAdmin = (req, res, next) => {
       process.env.JWT_SECRET
     );
 
-    // Only admin can access admin APIs
-    if (decoded.role !== "admin") {
-      return res.status(403).json({
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      return res.status(401).json({
         success: false,
-        message: "Admin access required",
+        message: "User account not found",
       });
     }
 
-    req.admin = decoded;
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        message: "Your account has been deactivated",
+      });
+    }
+
+    req.user = user;
+    req.auth = decoded;
 
     next();
   } catch (error) {
@@ -70,3 +80,80 @@ export const protectAdmin = (req, res, next) => {
     });
   }
 };
+
+// ========================================
+// ADMIN ONLY
+// ========================================
+
+export const requireAdmin = (
+  req,
+  res,
+  next
+) => {
+  if (
+    !req.user ||
+    !["admin", "owner"].includes(req.user.role)
+  ) {
+    return res.status(403).json({
+      success: false,
+      message: "Salon Admin access required",
+    });
+  }
+
+  next();
+};
+
+// ========================================
+// SUPER ADMIN ONLY
+// ========================================
+
+export const requireSuperAdmin = (
+  req,
+  res,
+  next
+) => {
+  if (
+    !req.user ||
+    req.user.role !== "superadmin"
+  ) {
+    return res.status(403).json({
+      success: false,
+      message: "Super Admin access required",
+    });
+  }
+
+  next();
+};
+
+// ========================================
+// ADMIN OR SUPER ADMIN
+// ========================================
+
+export const requireAdminOrSuperAdmin = (
+  req,
+  res,
+  next
+) => {
+  if (
+    !req.user ||
+    !["admin", "owner", "superadmin"].includes(
+      req.user.role
+    )
+  ) {
+    return res.status(403).json({
+      success: false,
+      message: "Admin access required",
+    });
+  }
+
+  next();
+};
+
+// ========================================
+// BACKWARD COMPATIBILITY
+// ========================================
+
+export const protectAdmin = [
+  protectAuth,
+  requireAdmin,
+];

@@ -17,7 +17,7 @@ import productRoutes from "./routes/productRoutes.js";
 import expenseRoutes from "./routes/expenseRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import salaryRoutes from "./routes/salaryRoutes.js";
-
+import superAdminRoutes from "./routes/superAdminRoutes.js";
 
 dotenv.config();
 
@@ -74,7 +74,16 @@ app.use("/api/auth", authRoutes);
 // ========================================
 // CLIENT ROUTES
 // ========================================
+app.use("/api/auth", authRoutes);
 
+app.use(
+  "/api/superadmin",
+  superAdminRoutes
+);
+
+app.use("/api/clients", clientRoutes);
+app.use("/api/services", serviceRoutes);
+app.use("/api/bills", billRoutes);
 app.use("/api/clients", clientRoutes);
 
 app.use("/api/services", serviceRoutes);
