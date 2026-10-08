@@ -1,6 +1,6 @@
-
 import Service from "../models/Service.js";
 import cloudinary from "../config/cloudinary.js";
+import XLSX from "xlsx";
 
 /* =========================================================
    HELPERS
@@ -30,6 +30,7 @@ const deleteCloudinaryImage = async (publicId) => {
 
   try {
     await cloudinary.uploader.destroy(publicId);
+
     console.log("Cloudinary image deleted:", publicId);
   } catch (error) {
     console.error(
@@ -37,6 +38,22 @@ const deleteCloudinaryImage = async (publicId) => {
       error?.message || error
     );
   }
+};
+
+/* =========================================================
+   NORMALIZE SERVICE GROUP
+========================================================= */
+
+const normalizeServiceGroup = (value) => {
+  if (
+    value === undefined ||
+    value === null ||
+    String(value).trim() === ""
+  ) {
+    return "General";
+  }
+
+  return String(value).trim();
 };
 
 /* =========================================================
@@ -54,6 +71,7 @@ export const createService = async (req, res) => {
 
     const {
       name,
+      serviceGroup,
       category,
       price,
       duration,
@@ -64,7 +82,7 @@ export const createService = async (req, res) => {
        VALIDATION
     ----------------------------- */
 
-    if (!name || !name.trim()) {
+    if (!name || !String(name).trim()) {
       return res.status(400).json({
         success: false,
         message: "Service name is required",
@@ -83,7 +101,8 @@ export const createService = async (req, res) => {
     if (Number.isNaN(numericPrice) || numericPrice < 0) {
       return res.status(400).json({
         success: false,
-        message: "Service price must be a valid non-negative number",
+        message:
+          "Service price must be a valid non-negative number",
       });
     }
 
@@ -129,7 +148,11 @@ export const createService = async (req, res) => {
     const service = await Service.create({
       salonId,
 
-      name: name.trim(),
+      name: String(name).trim(),
+
+      serviceGroup: normalizeServiceGroup(
+        serviceGroup
+      ),
 
       category:
         typeof category === "string"
@@ -163,13 +186,16 @@ export const createService = async (req, res) => {
     ----------------------------- */
 
     if (uploadedPublicId) {
-      await deleteCloudinaryImage(uploadedPublicId);
+      await deleteCloudinaryImage(
+        uploadedPublicId
+      );
     }
 
     if (error?.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Service already exists",
+        message:
+          "Service with the same name already exists in this group",
       });
     }
 
@@ -195,7 +221,9 @@ export const getServices = async (req, res) => {
     const {
       search,
       category,
+      serviceGroup,
       isActive,
+      status,
       page = 1,
       limit = 50,
     } = req.query;
@@ -210,6 +238,10 @@ export const getServices = async (req, res) => {
 
     /* -----------------------------
        ACTIVE / INACTIVE FILTER
+
+       Supports both:
+       ?isActive=true
+       ?status=active
     ----------------------------- */
 
     if (
@@ -218,6 +250,24 @@ export const getServices = async (req, res) => {
     ) {
       query.isActive =
         String(isActive).toLowerCase() === "true";
+    } else if (
+      status !== undefined &&
+      status !== ""
+    ) {
+      const normalizedStatus =
+        String(status).toLowerCase();
+
+      if (normalizedStatus === "active") {
+        query.isActive = true;
+      }
+
+      if (normalizedStatus === "inactive") {
+        query.isActive = false;
+      }
+
+      if (normalizedStatus === "all") {
+        // Do not apply isActive filter.
+      }
     }
 
     /* -----------------------------
@@ -232,6 +282,18 @@ export const getServices = async (req, res) => {
     }
 
     /* -----------------------------
+       SERVICE GROUP FILTER
+    ----------------------------- */
+
+    if (
+      serviceGroup &&
+      String(serviceGroup).trim()
+    ) {
+      query.serviceGroup =
+        String(serviceGroup).trim();
+    }
+
+    /* -----------------------------
        SEARCH
     ----------------------------- */
 
@@ -239,7 +301,8 @@ export const getServices = async (req, res) => {
       search &&
       String(search).trim()
     ) {
-      const searchValue = String(search).trim();
+      const searchValue =
+        String(search).trim();
 
       query.$or = [
         {
@@ -250,6 +313,12 @@ export const getServices = async (req, res) => {
         },
         {
           category: {
+            $regex: searchValue,
+            $options: "i",
+          },
+        },
+        {
+          serviceGroup: {
             $regex: searchValue,
             $options: "i",
           },
@@ -285,7 +354,9 @@ export const getServices = async (req, res) => {
     ] = await Promise.all([
       Service.find(query)
         .sort({
-          createdAt: -1,
+          serviceGroup: 1,
+          category: 1,
+          name: 1,
         })
         .skip(skip)
         .limit(limitNumber),
@@ -301,11 +372,13 @@ export const getServices = async (req, res) => {
       limit: limitNumber,
       totalPages:
         Math.ceil(total / limitNumber),
-
       services,
     });
   } catch (error) {
-    console.error("GET SERVICES ERROR:", error);
+    console.error(
+      "GET SERVICES ERROR:",
+      error
+    );
 
     return res.status(500).json({
       success: false,
@@ -320,9 +393,15 @@ export const getServices = async (req, res) => {
    GET /api/services/:id
 ========================================================= */
 
-export const getServiceById = async (req, res) => {
+export const getServiceById = async (
+  req,
+  res
+) => {
   try {
-    const salonId = validateSalonAccess(req, res);
+    const salonId = validateSalonAccess(
+      req,
+      res
+    );
 
     if (!salonId) return;
 
@@ -363,11 +442,17 @@ export const getServiceById = async (req, res) => {
    PUT /api/services/:id
 ========================================================= */
 
-export const updateService = async (req, res) => {
+export const updateService = async (
+  req,
+  res
+) => {
   let uploadedPublicId = null;
 
   try {
-    const salonId = validateSalonAccess(req, res);
+    const salonId = validateSalonAccess(
+      req,
+      res
+    );
 
     if (!salonId) return;
 
@@ -375,6 +460,7 @@ export const updateService = async (req, res) => {
 
     const {
       name,
+      serviceGroup,
       category,
       price,
       duration,
@@ -403,17 +489,27 @@ export const updateService = async (req, res) => {
     ----------------------------- */
 
     if (name !== undefined) {
-      if (
-        !String(name).trim()
-      ) {
+      if (!String(name).trim()) {
         return res.status(400).json({
           success: false,
-          message: "Service name cannot be empty",
+          message:
+            "Service name cannot be empty",
         });
       }
 
       service.name =
         String(name).trim();
+    }
+
+    /* -----------------------------
+       SERVICE GROUP
+    ----------------------------- */
+
+    if (serviceGroup !== undefined) {
+      service.serviceGroup =
+        normalizeServiceGroup(
+          serviceGroup
+        );
     }
 
     /* -----------------------------
@@ -515,7 +611,8 @@ export const updateService = async (req, res) => {
 
       service.image = {
         url: req.file.path || "",
-        publicId: req.file.filename || "",
+        publicId:
+          req.file.filename || "",
       };
 
       uploadedPublicId =
@@ -533,7 +630,8 @@ export const updateService = async (req, res) => {
 
       if (
         oldPublicId &&
-        oldPublicId !== uploadedPublicId
+        oldPublicId !==
+          uploadedPublicId
       ) {
         await deleteCloudinaryImage(
           oldPublicId
@@ -545,14 +643,18 @@ export const updateService = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: "Service updated successfully",
+      message:
+        "Service updated successfully",
       service,
     });
   } catch (error) {
-    console.error("UPDATE SERVICE ERROR:", error);
+    console.error(
+      "UPDATE SERVICE ERROR:",
+      error
+    );
 
     /* -----------------------------
-       CLEANUP NEW IMAGE IF SAVE FAILED
+       CLEANUP NEW IMAGE
     ----------------------------- */
 
     if (uploadedPublicId) {
@@ -564,13 +666,499 @@ export const updateService = async (req, res) => {
     if (error?.code === 11000) {
       return res.status(409).json({
         success: false,
-        message: "Service already exists",
+        message:
+          "Service with the same name already exists in this group",
       });
     }
 
     return res.status(500).json({
       success: false,
       message: "Failed to update service",
+      error: error.message,
+    });
+  }
+};
+
+/* =========================================================
+   BULK UPLOAD SERVICES
+   POST /api/services/bulk-upload
+
+   Supported:
+   - .xlsx
+   - .xls
+   - .csv
+
+   Expected columns:
+
+   serviceGroup
+   name
+   category
+   price
+   duration
+   description
+========================================================= */
+
+export const bulkUploadServices = async (
+  req,
+  res
+) => {
+  try {
+    const salonId = validateSalonAccess(
+      req,
+      res
+    );
+
+    if (!salonId) return;
+
+    /* -----------------------------
+       FILE VALIDATION
+    ----------------------------- */
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Excel or CSV file is required",
+      });
+    }
+
+    const originalName =
+      req.file.originalname || "";
+
+    const extension =
+      originalName
+        .split(".")
+        .pop()
+        ?.toLowerCase();
+
+    const allowedExtensions = [
+      "xlsx",
+      "xls",
+      "csv",
+    ];
+
+    if (
+      !allowedExtensions.includes(
+        extension
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Only XLSX, XLS and CSV files are supported",
+      });
+    }
+
+    /* -----------------------------
+       READ FILE
+
+       multer memoryStorage is
+       recommended for this endpoint.
+    ----------------------------- */
+
+    if (!req.file.buffer) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Uploaded file data is not available",
+      });
+    }
+
+    const workbook =
+      XLSX.read(req.file.buffer, {
+        type: "buffer",
+      });
+
+    const sheetName =
+      workbook.SheetNames[0];
+
+    if (!sheetName) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "No worksheet found in uploaded file",
+      });
+    }
+
+    const worksheet =
+      workbook.Sheets[sheetName];
+
+    const rows =
+      XLSX.utils.sheet_to_json(
+        worksheet,
+        {
+          defval: "",
+          raw: false,
+        }
+      );
+
+    if (!rows.length) {
+      return res.status(400).json({
+        success: false,
+        message:
+          "Uploaded file does not contain any service rows",
+      });
+    }
+
+    /* -----------------------------
+       RESULT COUNTERS
+    ----------------------------- */
+
+    let created = 0;
+    let duplicates = 0;
+    let failed = 0;
+
+    const createdServices = [];
+    const duplicateRows = [];
+    const failedRows = [];
+
+    /* -----------------------------
+       PROCESS EACH ROW
+    ----------------------------- */
+
+    for (
+      let index = 0;
+      index < rows.length;
+      index++
+    ) {
+      const row = rows[index];
+
+      const rowNumber =
+        index + 2;
+
+      try {
+        /* -----------------------------
+           SUPPORT DIFFERENT HEADER CASES
+        ----------------------------- */
+
+        const name =
+          row.name ??
+          row.Name ??
+          row["Service Name"] ??
+          row.serviceName ??
+          "";
+
+        const serviceGroup =
+          row.serviceGroup ??
+          row.ServiceGroup ??
+          row["Service Group"] ??
+          row.group ??
+          row.Group ??
+          "General";
+
+        const category =
+          row.category ??
+          row.Category ??
+          "";
+
+        const price =
+          row.price ??
+          row.Price ??
+          row["Service Price"] ??
+          "";
+
+        const duration =
+          row.duration ??
+          row.Duration ??
+          row["Duration (min)"] ??
+          row["Duration"] ??
+          "";
+
+        const description =
+          row.description ??
+          row.Description ??
+          "";
+
+        /* -----------------------------
+           REQUIRED NAME
+        ----------------------------- */
+
+        if (
+          !String(name).trim()
+        ) {
+          failed++;
+
+          failedRows.push({
+            row: rowNumber,
+            name: "",
+            reason:
+              "Service name is required",
+          });
+
+          continue;
+        }
+
+        /* -----------------------------
+           PRICE
+        ----------------------------- */
+
+        if (
+          price === "" ||
+          price === null ||
+          price === undefined
+        ) {
+          failed++;
+
+          failedRows.push({
+            row: rowNumber,
+            name: String(name).trim(),
+            reason:
+              "Service price is required",
+          });
+
+          continue;
+        }
+
+        const numericPrice =
+          Number(
+            String(price)
+              .replace(/,/g, "")
+              .replace(/₹/g, "")
+              .trim()
+          );
+
+        if (
+          Number.isNaN(numericPrice) ||
+          numericPrice < 0
+        ) {
+          failed++;
+
+          failedRows.push({
+            row: rowNumber,
+            name: String(name).trim(),
+            reason:
+              "Invalid service price",
+          });
+
+          continue;
+        }
+
+        /* -----------------------------
+           DURATION
+        ----------------------------- */
+
+        let numericDuration = 30;
+
+        if (
+          duration !== "" &&
+          duration !== null &&
+          duration !== undefined
+        ) {
+          numericDuration =
+            Number(
+              String(duration)
+                .replace(/min/gi, "")
+                .trim()
+            );
+        }
+
+        if (
+          Number.isNaN(
+            numericDuration
+          ) ||
+          numericDuration <= 0
+        ) {
+          failed++;
+
+          failedRows.push({
+            row: rowNumber,
+            name: String(name).trim(),
+            reason:
+              "Invalid service duration",
+          });
+
+          continue;
+        }
+
+        /* -----------------------------
+           NORMALIZE VALUES
+        ----------------------------- */
+
+        const normalizedName =
+          String(name).trim();
+
+        const normalizedGroup =
+          normalizeServiceGroup(
+            serviceGroup
+          );
+
+        const normalizedCategory =
+          String(category || "").trim();
+
+        const normalizedDescription =
+          String(description || "").trim();
+
+        /* -----------------------------
+           DUPLICATE CHECK
+
+           Duplicate means same:
+           salon + serviceGroup + name
+        ----------------------------- */
+
+        const existingService =
+          await Service.findOne({
+            salonId,
+            serviceGroup:
+              normalizedGroup,
+            name: {
+              $regex:
+                `^${normalizedName.replace(
+                  /[.*+?^${}()|[\]\\]/g,
+                  "\\$&"
+                )}$`,
+              $options: "i",
+            },
+          });
+
+        if (existingService) {
+          duplicates++;
+
+          duplicateRows.push({
+            row: rowNumber,
+            name: normalizedName,
+            serviceGroup:
+              normalizedGroup,
+            reason:
+              "Service already exists in this group",
+            serviceId:
+              existingService._id,
+          });
+
+          continue;
+        }
+
+        /* -----------------------------
+           CREATE SERVICE
+        ----------------------------- */
+
+        const service =
+          await Service.create({
+            salonId,
+
+            name: normalizedName,
+
+            serviceGroup:
+              normalizedGroup,
+
+            category:
+              normalizedCategory,
+
+            price:
+              numericPrice,
+
+            duration:
+              numericDuration,
+
+            description:
+              normalizedDescription,
+
+            image: {
+              url: "",
+              publicId: "",
+            },
+
+            isActive: true,
+          });
+
+        created++;
+
+        createdServices.push(
+          service
+        );
+      } catch (rowError) {
+        console.error(
+          `BULK SERVICE ROW ${rowNumber} ERROR:`,
+          rowError
+        );
+
+        /* -----------------------------
+           HANDLE DUPLICATE RACE
+        ----------------------------- */
+
+        if (
+          rowError?.code === 11000
+        ) {
+          duplicates++;
+
+          duplicateRows.push({
+            row: rowNumber,
+            name:
+              String(
+                row.name ??
+                  row.Name ??
+                  row["Service Name"] ??
+                  ""
+              ).trim(),
+            serviceGroup:
+              normalizeServiceGroup(
+                row.serviceGroup ??
+                  row.ServiceGroup ??
+                  row["Service Group"] ??
+                  row.group ??
+                  row.Group ??
+                  "General"
+              ),
+            reason:
+              "Duplicate service",
+          });
+
+          continue;
+        }
+
+        failed++;
+
+        failedRows.push({
+          row: rowNumber,
+          name:
+            String(
+              row.name ??
+                row.Name ??
+                row["Service Name"] ??
+                ""
+            ).trim(),
+          reason:
+            rowError?.message ||
+            "Failed to create service",
+        });
+      }
+    }
+
+    /* -----------------------------
+       RESPONSE
+    ----------------------------- */
+
+    return res.status(200).json({
+      success: true,
+
+      message:
+        "Service import completed",
+
+      totalRows:
+        rows.length,
+
+      created,
+
+      duplicates,
+
+      failed,
+
+      services:
+        createdServices,
+
+      duplicateRows,
+
+      failedRows,
+    });
+  } catch (error) {
+    console.error(
+      "BULK UPLOAD SERVICES ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message:
+        "Failed to import services",
       error: error.message,
     });
   }
@@ -586,7 +1174,10 @@ export const deactivateService = async (
   res
 ) => {
   try {
-    const salonId = validateSalonAccess(req, res);
+    const salonId = validateSalonAccess(
+      req,
+      res
+    );
 
     if (!salonId) return;
 
@@ -617,7 +1208,8 @@ export const deactivateService = async (
 
     return res.status(200).json({
       success: true,
-      message: "Service deactivated successfully",
+      message:
+        "Service deactivated successfully",
       service,
     });
   } catch (error) {
@@ -628,7 +1220,8 @@ export const deactivateService = async (
 
     return res.status(500).json({
       success: false,
-      message: "Failed to deactivate service",
+      message:
+        "Failed to deactivate service",
       error: error.message,
     });
   }
@@ -644,7 +1237,10 @@ export const reactivateService = async (
   res
 ) => {
   try {
-    const salonId = validateSalonAccess(req, res);
+    const salonId = validateSalonAccess(
+      req,
+      res
+    );
 
     if (!salonId) return;
 
@@ -675,7 +1271,8 @@ export const reactivateService = async (
 
     return res.status(200).json({
       success: true,
-      message: "Service reactivated successfully",
+      message:
+        "Service reactivated successfully",
       service,
     });
   } catch (error) {
@@ -686,7 +1283,8 @@ export const reactivateService = async (
 
     return res.status(500).json({
       success: false,
-      message: "Failed to reactivate service",
+      message:
+        "Failed to reactivate service",
       error: error.message,
     });
   }
@@ -702,7 +1300,10 @@ export const deleteService = async (
   res
 ) => {
   try {
-    const salonId = validateSalonAccess(req, res);
+    const salonId = validateSalonAccess(
+      req,
+      res
+    );
 
     if (!salonId) return;
 
@@ -712,10 +1313,11 @@ export const deleteService = async (
        FIND ONLY WITHIN CURRENT SALON
     ----------------------------- */
 
-    const service = await Service.findOne({
-      _id: id,
-      salonId,
-    });
+    const service =
+      await Service.findOne({
+        _id: id,
+        salonId,
+      });
 
     if (!service) {
       return res.status(404).json({
@@ -745,7 +1347,8 @@ export const deleteService = async (
 
     return res.status(200).json({
       success: true,
-      message: "Service deleted successfully",
+      message:
+        "Service deleted successfully",
     });
   } catch (error) {
     console.error(
@@ -755,9 +1358,9 @@ export const deleteService = async (
 
     return res.status(500).json({
       success: false,
-      message: "Failed to delete service",
+      message:
+        "Failed to delete service",
       error: error.message,
     });
   }
 };
-

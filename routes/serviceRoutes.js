@@ -1,4 +1,3 @@
-
 import express from "express";
 
 import {
@@ -6,26 +5,22 @@ import {
   getServices,
   getServiceById,
   updateService,
+  bulkUploadServices,
   deactivateService,
   reactivateService,
   deleteService,
 } from "../controllers/serviceController.js";
 
-import {
-  protectAdmin,
-} from "../middleware/authMiddleware.js";
-
 import upload from "../middleware/upload.js";
+
+import { protectAdmin } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-// ========================================
-// ALL SERVICE ROUTES REQUIRE ADMIN LOGIN
-// ========================================
-
-// ========================================
-// ADD SERVICE
-// ========================================
+/* =========================================================
+   CREATE SERVICE
+   POST /api/services
+========================================================= */
 
 router.post(
   "/",
@@ -34,9 +29,30 @@ router.post(
   createService
 );
 
-// ========================================
-// GET ALL SERVICES / SEARCH
-// ========================================
+/* =========================================================
+   BULK UPLOAD SERVICES
+   POST /api/services/bulk-upload
+
+   Excel / CSV:
+   serviceGroup
+   name
+   category
+   price
+   duration
+   description
+========================================================= */
+
+router.post(
+  "/bulk-upload",
+  protectAdmin,
+  upload.single("file"),
+  bulkUploadServices
+);
+
+/* =========================================================
+   GET ALL SERVICES
+   GET /api/services
+========================================================= */
 
 router.get(
   "/",
@@ -44,9 +60,10 @@ router.get(
   getServices
 );
 
-// ========================================
-// GET SINGLE SERVICE
-// ========================================
+/* =========================================================
+   GET SERVICE BY ID
+   GET /api/services/:id
+========================================================= */
 
 router.get(
   "/:id",
@@ -54,9 +71,10 @@ router.get(
   getServiceById
 );
 
-// ========================================
-// UPDATE SERVICE
-// ========================================
+/* =========================================================
+   UPDATE SERVICE
+   PUT /api/services/:id
+========================================================= */
 
 router.put(
   "/:id",
@@ -65,9 +83,10 @@ router.put(
   updateService
 );
 
-// ========================================
-// DEACTIVATE SERVICE
-// ========================================
+/* =========================================================
+   DEACTIVATE SERVICE
+   PATCH /api/services/:id/deactivate
+========================================================= */
 
 router.patch(
   "/:id/deactivate",
@@ -75,9 +94,10 @@ router.patch(
   deactivateService
 );
 
-// ========================================
-// REACTIVATE SERVICE
-// ========================================
+/* =========================================================
+   REACTIVATE SERVICE
+   PATCH /api/services/:id/reactivate
+========================================================= */
 
 router.patch(
   "/:id/reactivate",
@@ -85,9 +105,10 @@ router.patch(
   reactivateService
 );
 
-// ========================================
-// DELETE SERVICE
-// ========================================
+/* =========================================================
+   DELETE SERVICE
+   DELETE /api/services/:id
+========================================================= */
 
 router.delete(
   "/:id",

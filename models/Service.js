@@ -15,6 +15,26 @@ const serviceSchema = new mongoose.Schema(
     },
 
     // ========================================
+    // SERVICE GROUP
+    // ========================================
+    // Example:
+    // Hair Services
+    // Skin Services
+    // Grooming
+    // Nail Services
+    // Makeup
+    // Spa
+    // etc.
+
+    serviceGroup: {
+      type: String,
+      trim: true,
+      default: "General",
+      maxlength: 100,
+      index: true,
+    },
+
+    // ========================================
     // BASIC DETAILS
     // ========================================
 
@@ -30,6 +50,7 @@ const serviceSchema = new mongoose.Schema(
       trim: true,
       default: "",
       maxlength: 100,
+      index: true,
     },
 
     price: {
@@ -74,6 +95,7 @@ const serviceSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true,
+      index: true,
     },
   },
   {
@@ -88,7 +110,48 @@ const serviceSchema = new mongoose.Schema(
 serviceSchema.index({
   name: "text",
   category: "text",
+  serviceGroup: "text",
+  description: "text",
 });
+
+// ========================================
+// SALON + SERVICE GROUP INDEX
+// ========================================
+
+serviceSchema.index({
+  salonId: 1,
+  serviceGroup: 1,
+});
+
+// ========================================
+// SALON + CATEGORY INDEX
+// ========================================
+
+serviceSchema.index({
+  salonId: 1,
+  category: 1,
+});
+
+// ========================================
+// DUPLICATE SERVICE PROTECTION
+// ========================================
+// Same salon me same group + same service name
+// duplicate nahi hona chahiye.
+
+serviceSchema.index(
+  {
+    salonId: 1,
+    serviceGroup: 1,
+    name: 1,
+  },
+  {
+    unique: true,
+    collation: {
+      locale: "en",
+      strength: 2,
+    },
+  }
+);
 
 // ========================================
 // MODEL

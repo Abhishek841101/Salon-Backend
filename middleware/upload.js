@@ -7,18 +7,33 @@ import multer from "multer";
 const storage = multer.memoryStorage();
 
 // ========================================
-// IMAGE FILTER
+// FILE FILTER
+// Supports:
+// - Images
+// - Excel XLSX
+// - Excel XLS
+// - CSV
 // ========================================
 
 const fileFilter = (req, file, cb) => {
   console.log("\n========================================");
-  console.log("           CLIENT IMAGE UPLOAD");
+  console.log("             FILE UPLOAD");
   console.log("========================================");
+  console.log("Field Name    :", file.fieldname);
   console.log("Original Name :", file.originalname);
   console.log("MIME Type     :", file.mimetype);
   console.log("========================================");
 
-  const allowedMimeTypes = [
+  const extension = file.originalname
+    ?.split(".")
+    .pop()
+    ?.toLowerCase();
+
+  // ========================================
+  // IMAGE TYPES
+  // ========================================
+
+  const allowedImageMimeTypes = [
     "image/jpeg",
     "image/jpg",
     "image/png",
@@ -29,12 +44,7 @@ const fileFilter = (req, file, cb) => {
     "image/jfif",
   ];
 
-  const extension = file.originalname
-    ?.split(".")
-    .pop()
-    ?.toLowerCase();
-
-  const allowedExtensions = [
+  const allowedImageExtensions = [
     "jpg",
     "jpeg",
     "png",
@@ -45,13 +55,79 @@ const fileFilter = (req, file, cb) => {
     "jfif",
   ];
 
-  const valid =
-    allowedMimeTypes.includes(file.mimetype) ||
-    allowedExtensions.includes(extension);
+  // ========================================
+  // EXCEL / CSV TYPES
+  // ========================================
 
-  if (!valid) {
-    return cb(new Error("Only image files are allowed"), false);
+  const allowedDocumentMimeTypes = [
+    // XLSX
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+
+    // XLS
+    "application/vnd.ms-excel",
+
+    // CSV
+    "text/csv",
+
+    // Some browsers / clients send CSV as this
+    "application/csv",
+
+    // Generic binary type sometimes used for Excel
+    "application/octet-stream",
+  ];
+
+  const allowedDocumentExtensions = [
+    "xlsx",
+    "xls",
+    "csv",
+  ];
+
+  // ========================================
+  // CHECK IMAGE
+  // ========================================
+
+  const isImage =
+    allowedImageMimeTypes.includes(
+      file.mimetype
+    ) ||
+    allowedImageExtensions.includes(
+      extension
+    );
+
+  // ========================================
+  // CHECK EXCEL / CSV
+  // ========================================
+
+  const isDocument =
+    allowedDocumentMimeTypes.includes(
+      file.mimetype
+    ) ||
+    allowedDocumentExtensions.includes(
+      extension
+    );
+
+  // ========================================
+  // FINAL VALIDATION
+  // ========================================
+
+  if (!isImage && !isDocument) {
+    console.log(
+      "❌ FILE REJECTED:",
+      file.originalname
+    );
+
+    return cb(
+      new Error(
+        "Only image, Excel (.xlsx/.xls) and CSV files are allowed"
+      ),
+      false
+    );
   }
+
+  console.log(
+    "✅ FILE ACCEPTED:",
+    file.originalname
+  );
 
   cb(null, true);
 };
@@ -62,9 +138,12 @@ const fileFilter = (req, file, cb) => {
 
 const upload = multer({
   storage,
+
   fileFilter,
+
   limits: {
-    fileSize: 5 * 1024 * 1024,
+    // 10 MB
+    fileSize: 10 * 1024 * 1024,
   },
 });
 
