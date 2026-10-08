@@ -1,7 +1,7 @@
 
 import mongoose from "mongoose";
+import XLSX from "xlsx";
 import Product from "../models/Product.js";
-
 // ============================================================
 // HELPERS
 // ============================================================
@@ -33,7 +33,504 @@ const validateSalonId = (req, res) => {
 
   return salonId;
 };
+// ============================================================
+// BULK UPLOAD PRODUCTS
+// POST /api/products/bulk-upload
+// ============================================================
 
+export const bulkUploadProducts = async (req, res) => {
+  try {
+    // --------------------------------------------------------
+    // VALIDATE SALON
+    // --------------------------------------------------------
+
+    const salonId = validateSalonId(req, res);
+
+    if (!salonId) return;
+
+    // --------------------------------------------------------
+    // FILE CHECK
+    // --------------------------------------------------------
+
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: "Excel or CSV file is required",
+      });
+    }
+
+    // --------------------------------------------------------
+    // FILE EXTENSION CHECK
+    // --------------------------------------------------------
+
+    const originalName = String(
+      req.file.originalname || ""
+    ).toLowerCase();
+
+    const allowedExtensions = [
+      ".xlsx",
+      ".xls",
+      ".csv",
+    ];
+
+    const isAllowedExtension = allowedExtensions.some(
+      (extension) => originalName.endsWith(extension)
+    );
+
+    if (!isAllowedExtension) {
+      return res.status(400).json({
+        success: false,
+        message: "Only XLSX, XLS, and CSV files are allowed",
+      });
+    }
+
+    // --------------------------------------------------------
+    // READ EXCEL / CSV
+    // --------------------------------------------------------
+
+    const workbook = XLSX.read(req.file.buffer, {
+      type: "buffer",
+      cellDates: true,
+    });
+
+    if (
+      !workbook.SheetNames ||
+      workbook.SheetNames.length === 0
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "No worksheet found in uploaded file",
+      });
+    }
+
+    const firstSheetName = workbook.SheetNames[0];
+
+    const worksheet = workbook.Sheets[firstSheetName];
+
+    if (!worksheet) {
+      return res.status(400).json({
+        success: false,
+        message: "Unable to read worksheet",
+      });
+    }
+
+    const rows = XLSX.utils.sheet_to_json(
+      worksheet,
+      {
+        defval: "",
+        raw: false,
+      }
+    );
+
+    // --------------------------------------------------------
+    // EMPTY FILE CHECK
+    // --------------------------------------------------------
+
+    if (!rows || rows.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Uploaded file is empty",
+      });
+    }
+
+    // --------------------------------------------------------
+    // HEADER NORMALIZER
+    // --------------------------------------------------------
+
+    const normalizeHeader = (value) => {
+      return String(value || "")
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_-]+/g, "");
+    };
+
+    // --------------------------------------------------------
+    // GET VALUE FROM ROW
+    // --------------------------------------------------------
+
+    const getValue = (row, aliases) => {
+      for (const key of Object.keys(row)) {
+        const normalizedKey = normalizeHeader(key);
+
+        if (aliases.includes(normalizedKey)) {
+          return row[key];
+        }
+      }
+
+      return "";
+    };
+
+    // --------------------------------------------------------
+    // CREATED / DUPLICATE / FAILED ARRAYS
+    // --------------------------------------------------------
+
+    const createdProducts = [];
+
+    const duplicateRows = [];
+
+    const failedRows = [];
+
+    // --------------------------------------------------------
+    // TRACK DUPLICATES INSIDE EXCEL
+    // --------------------------------------------------------
+
+    const uploadedNames = new Set();
+
+    // --------------------------------------------------------
+    // PROCESS EACH ROW
+    // --------------------------------------------------------
+
+    for (let index = 0; index < rows.length; index++) {
+      const row = rows[index];
+
+      const excelRowNumber = index + 2;
+
+      try {
+        // ----------------------------------------------------
+        // READ VALUES
+        // ----------------------------------------------------
+
+        const name = getValue(row, [
+          "name",
+          "productname",
+          "product",
+        ]);
+
+        const brand = getValue(row, [
+          "brand",
+        ]);
+
+        const category = getValue(row, [
+          "category",
+          "productcategory",
+        ]);
+
+        const unit = getValue(row, [
+          "unit",
+          "unitname",
+        ]);
+
+        const currentStockValue = getValue(row, [
+          "currentstock",
+          "stock",
+          "quantity",
+          "currentquantity",
+        ]);
+
+        const minimumStockValue = getValue(row, [
+          "minimumstock",
+          "minstock",
+          "minimumquantity",
+          "minquantity",
+        ]);
+
+        const purchasePriceValue = getValue(row, [
+          "purchaseprice",
+          "price",
+          "costprice",
+        ]);
+
+        const vendor = getValue(row, [
+          "vendor",
+          "supplier",
+          "suppliername",
+        ]);
+
+        const notes = getValue(row, [
+          "notes",
+          "note",
+          "remarks",
+          "remark",
+        ]);
+
+        // ----------------------------------------------------
+        // STRING NORMALIZATION
+        // ----------------------------------------------------
+
+        const productName = String(
+          name || ""
+        ).trim();
+
+        const productBrand = String(
+          brand || ""
+        ).trim();
+
+        const productCategory = String(
+          category || ""
+        ).trim();
+
+        const productUnit = String(
+          unit || ""
+        ).trim();
+
+        const productVendor = String(
+          vendor || ""
+        ).trim();
+
+        const productNotes = String(
+          notes || ""
+        ).trim();
+
+        // ----------------------------------------------------
+        // REQUIRED FIELD VALIDATION
+        // ----------------------------------------------------
+
+        if (!productName) {
+          failedRows.push({
+            row: excelRowNumber,
+            message: "Product name is required",
+            data: row,
+          });
+
+          continue;
+        }
+
+        if (!productCategory) {
+          failedRows.push({
+            row: excelRowNumber,
+            name: productName,
+            message: "Category is required",
+            data: row,
+          });
+
+          continue;
+        }
+
+        if (!productUnit) {
+          failedRows.push({
+            row: excelRowNumber,
+            name: productName,
+            message: "Unit is required",
+            data: row,
+          });
+
+          continue;
+        }
+
+        // ----------------------------------------------------
+        // NORMALIZE PRODUCT NAME FOR DUPLICATE CHECK
+        // ----------------------------------------------------
+
+        const normalizedName =
+          productName.toLowerCase().trim();
+
+        // ----------------------------------------------------
+        // DUPLICATE INSIDE UPLOADED FILE
+        // ----------------------------------------------------
+
+        if (uploadedNames.has(normalizedName)) {
+          duplicateRows.push({
+            row: excelRowNumber,
+            name: productName,
+            reason: "Duplicate product name in uploaded file",
+          });
+
+          continue;
+        }
+
+        uploadedNames.add(normalizedName);
+
+        // ----------------------------------------------------
+        // NUMBER CONVERSION
+        // ----------------------------------------------------
+
+        const stock =
+          currentStockValue === "" ||
+          currentStockValue === null ||
+          currentStockValue === undefined
+            ? 0
+            : Number(currentStockValue);
+
+        const minimumStock =
+          minimumStockValue === "" ||
+          minimumStockValue === null ||
+          minimumStockValue === undefined
+            ? 0
+            : Number(minimumStockValue);
+
+        const purchasePrice =
+          purchasePriceValue === "" ||
+          purchasePriceValue === null ||
+          purchasePriceValue === undefined
+            ? 0
+            : Number(purchasePriceValue);
+
+        // ----------------------------------------------------
+        // NUMBER VALIDATION
+        // ----------------------------------------------------
+
+        if (
+          Number.isNaN(stock) ||
+          stock < 0
+        ) {
+          failedRows.push({
+            row: excelRowNumber,
+            name: productName,
+            message: "Invalid current stock",
+            data: row,
+          });
+
+          continue;
+        }
+
+        if (
+          Number.isNaN(minimumStock) ||
+          minimumStock < 0
+        ) {
+          failedRows.push({
+            row: excelRowNumber,
+            name: productName,
+            message: "Invalid minimum stock",
+            data: row,
+          });
+
+          continue;
+        }
+
+        if (
+          Number.isNaN(purchasePrice) ||
+          purchasePrice < 0
+        ) {
+          failedRows.push({
+            row: excelRowNumber,
+            name: productName,
+            message: "Invalid purchase price",
+            data: row,
+          });
+
+          continue;
+        }
+
+        // ----------------------------------------------------
+        // NOTES LENGTH VALIDATION
+        // ----------------------------------------------------
+
+        if (productNotes.length > 500) {
+          failedRows.push({
+            row: excelRowNumber,
+            name: productName,
+            message: "Notes cannot exceed 500 characters",
+            data: row,
+          });
+
+          continue;
+        }
+
+        // ----------------------------------------------------
+        // CHECK EXISTING PRODUCT
+        // ----------------------------------------------------
+
+        const escapedName =
+          productName.replace(
+            /[.*+?^${}()|[\]\\]/g,
+            "\\$&"
+          );
+
+        const existingProduct =
+          await Product.findOne({
+            salonId,
+            name: {
+              $regex: `^${escapedName}$`,
+              $options: "i",
+            },
+          });
+
+        if (existingProduct) {
+          duplicateRows.push({
+            row: excelRowNumber,
+            name: productName,
+            reason: "Product already exists",
+            productId: existingProduct._id,
+          });
+
+          continue;
+        }
+
+        // ----------------------------------------------------
+        // CREATE PRODUCT
+        // ----------------------------------------------------
+
+        const product = await Product.create({
+          salonId,
+
+          name: productName,
+
+          brand: productBrand,
+
+          category: productCategory,
+
+          unit: productUnit,
+
+          currentStock: stock,
+
+          minimumStock,
+
+          purchasePrice,
+
+          vendor: productVendor,
+
+          notes: productNotes,
+
+          isActive: true,
+        });
+
+        // ----------------------------------------------------
+        // ADD CREATED PRODUCT
+        // ----------------------------------------------------
+
+        createdProducts.push(product);
+      } catch (rowError) {
+        console.error(
+          `BULK PRODUCT ROW ${excelRowNumber} ERROR:`,
+          rowError
+        );
+
+        failedRows.push({
+          row: excelRowNumber,
+          message:
+            rowError.message ||
+            "Failed to create product",
+          data: row,
+        });
+      }
+    }
+
+    // --------------------------------------------------------
+    // RESPONSE
+    // --------------------------------------------------------
+
+    return res.status(200).json({
+      success: true,
+
+      message: "Product import completed",
+
+      totalRows: rows.length,
+
+      created: createdProducts.length,
+
+      duplicates: duplicateRows.length,
+
+      failed: failedRows.length,
+
+      products: createdProducts,
+
+      duplicateRows,
+
+      failedRows,
+    });
+  } catch (error) {
+    console.error(
+      "BULK UPLOAD PRODUCTS ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to import products",
+      error: error.message,
+    });
+  }
+};
 // ============================================================
 // CREATE PRODUCT
 // POST /api/products

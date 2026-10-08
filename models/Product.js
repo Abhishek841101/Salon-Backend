@@ -1,4 +1,3 @@
-
 import mongoose from "mongoose";
 
 const productSchema = new mongoose.Schema(
@@ -20,7 +19,7 @@ const productSchema = new mongoose.Schema(
 
     name: {
       type: String,
-      required: true,
+      required: [true, "Product name is required"],
       trim: true,
     },
 
@@ -40,7 +39,7 @@ const productSchema = new mongoose.Schema(
 
     category: {
       type: String,
-      required: true,
+      required: [true, "Product category is required"],
       trim: true,
       index: true,
     },
@@ -51,7 +50,7 @@ const productSchema = new mongoose.Schema(
 
     unit: {
       type: String,
-      required: true,
+      required: [true, "Product unit is required"],
       trim: true,
     },
 
@@ -62,7 +61,7 @@ const productSchema = new mongoose.Schema(
     currentStock: {
       type: Number,
       required: true,
-      min: 0,
+      min: [0, "Current stock cannot be negative"],
       default: 0,
     },
 
@@ -72,7 +71,7 @@ const productSchema = new mongoose.Schema(
 
     minimumStock: {
       type: Number,
-      min: 0,
+      min: [0, "Minimum stock cannot be negative"],
       default: 0,
     },
 
@@ -82,7 +81,7 @@ const productSchema = new mongoose.Schema(
 
     purchasePrice: {
       type: Number,
-      min: 0,
+      min: [0, "Purchase price cannot be negative"],
       default: 0,
     },
 
@@ -104,7 +103,7 @@ const productSchema = new mongoose.Schema(
       type: String,
       trim: true,
       default: "",
-      maxlength: 500,
+      maxlength: [500, "Notes cannot exceed 500 characters"],
     },
 
     // ========================================
@@ -123,7 +122,7 @@ const productSchema = new mongoose.Schema(
 );
 
 // ========================================
-// INDEXES
+// TEXT SEARCH INDEX
 // ========================================
 
 productSchema.index({
@@ -132,20 +131,36 @@ productSchema.index({
   category: "text",
 });
 
+// ========================================
+// SALON + CATEGORY INDEX
+// ========================================
+
 productSchema.index({
   salonId: 1,
   category: 1,
 });
+
+// ========================================
+// SALON + ACTIVE STATUS INDEX
+// ========================================
 
 productSchema.index({
   salonId: 1,
   isActive: 1,
 });
 
+// ========================================
+// SALON + CURRENT STOCK INDEX
+// ========================================
+
 productSchema.index({
   salonId: 1,
   currentStock: 1,
 });
+
+// ========================================
+// SALON + MINIMUM STOCK INDEX
+// ========================================
 
 productSchema.index({
   salonId: 1,
@@ -172,12 +187,24 @@ productSchema.virtual("stockStatus").get(function () {
 });
 
 // ========================================
-// JSON / OBJECT VIRTUALS
+// STOCK VALUE VIRTUAL
+// ========================================
+
+productSchema.virtual("stockValue").get(function () {
+  return this.currentStock * this.purchasePrice;
+});
+
+// ========================================
+// JSON VIRTUALS
 // ========================================
 
 productSchema.set("toJSON", {
   virtuals: true,
 });
+
+// ========================================
+// OBJECT VIRTUALS
+// ========================================
 
 productSchema.set("toObject", {
   virtuals: true,

@@ -1,4 +1,3 @@
-
 import express from "express";
 
 import {
@@ -8,9 +7,11 @@ import {
   updateProduct,
   deleteProduct,
   getProductSummary,
+  bulkUploadProducts,
 } from "../controllers/productController.js";
 
 import { protectAdmin } from "../middleware/authMiddleware.js";
+import upload from "../middleware/upload.js";
 
 const router = express.Router();
 
@@ -23,6 +24,18 @@ router.get(
   "/summary",
   protectAdmin,
   getProductSummary
+);
+
+// ============================================================
+// BULK UPLOAD PRODUCTS
+// POST /api/products/bulk-upload
+// ============================================================
+
+router.post(
+  "/bulk-upload",
+  protectAdmin,
+  upload.single("file"),
+  bulkUploadProducts
 );
 
 // ============================================================
