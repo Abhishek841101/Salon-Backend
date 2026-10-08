@@ -722,32 +722,141 @@ export const bulkUploadServices = async (
       });
     }
 
-    const originalName =
-      req.file.originalname || "";
+    // ========================================
+// FILE TYPE VALIDATION
+// ========================================
 
-    const extension =
-      originalName
-        .split(".")
-        .pop()
-        ?.toLowerCase();
+const originalName = String(
+  req.file.originalname || ""
+)
+  .trim()
+  .toLowerCase();
 
-    const allowedExtensions = [
-      "xlsx",
-      "xls",
-      "csv",
-    ];
+const mimeType = String(
+  req.file.mimetype || ""
+)
+  .trim()
+  .toLowerCase();
 
-    if (
-      !allowedExtensions.includes(
-        extension
+const extension = originalName.includes(".")
+  ? originalName
+      .substring(
+        originalName.lastIndexOf(".") + 1
       )
-    ) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Only XLSX, XLS and CSV files are supported",
-      });
-    }
+      .toLowerCase()
+  : "";
+
+// ========================================
+// ALLOWED EXTENSIONS
+// ========================================
+
+const allowedExtensions = [
+  "xlsx",
+  "xls",
+  "csv",
+];
+
+// ========================================
+// ALLOWED MIME TYPES
+// ========================================
+
+const allowedMimeTypes = [
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "text/csv",
+  "application/csv",
+  "text/comma-separated-values",
+  "application/octet-stream",
+];
+
+// ========================================
+// CHECK EXTENSION
+// ========================================
+
+const extensionAllowed =
+  allowedExtensions.includes(
+    extension
+  );
+
+// ========================================
+// CHECK MIME TYPE
+// ========================================
+
+const mimeAllowed =
+  allowedMimeTypes.includes(
+    mimeType
+  );
+
+// ========================================
+// DEBUG
+// ========================================
+
+console.log(
+  "\n========================================"
+);
+
+console.log(
+  "BULK SERVICE FILE VALIDATION"
+);
+
+console.log(
+  "Original Name :",
+  req.file.originalname
+);
+
+console.log(
+  "MIME Type     :",
+  req.file.mimetype
+);
+
+console.log(
+  "Extension     :",
+  extension
+);
+
+console.log(
+  "Extension OK  :",
+  extensionAllowed
+);
+
+console.log(
+  "MIME OK       :",
+  mimeAllowed
+);
+
+console.log(
+  "File Size     :",
+  req.file.size
+);
+
+console.log(
+  "========================================\n"
+);
+
+// ========================================
+// FINAL VALIDATION
+// ========================================
+//
+// IMPORTANT:
+// Android / Expo kabhi-kabhi XLSX ko
+// application/octet-stream ke naam se bhejta hai.
+// Isliye extension OR MIME dono accept karenge.
+//
+
+if (
+  !extensionAllowed &&
+  !mimeAllowed
+) {
+  return res.status(400).json({
+    success: false,
+    message:
+      "Only XLSX, XLS and CSV files are supported",
+    fileName:
+      req.file.originalname || "",
+    mimeType:
+      req.file.mimetype || "",
+  });
+}
 
     /* -----------------------------
        READ FILE

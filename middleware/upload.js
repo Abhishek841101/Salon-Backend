@@ -24,10 +24,19 @@ const fileFilter = (req, file, cb) => {
   console.log("MIME Type     :", file.mimetype);
   console.log("========================================");
 
-  const extension = file.originalname
-    ?.split(".")
-    .pop()
-    ?.toLowerCase();
+  const originalName = String(
+    file.originalname || ""
+  )
+    .trim()
+    .toLowerCase();
+
+  const extension = originalName.includes(".")
+    ? originalName
+        .substring(
+          originalName.lastIndexOf(".") + 1
+        )
+        .toLowerCase()
+    : "";
 
   // ========================================
   // IMAGE TYPES
@@ -69,10 +78,13 @@ const fileFilter = (req, file, cb) => {
     // CSV
     "text/csv",
 
-    // Some browsers / clients send CSV as this
+    // CSV alternative
     "application/csv",
 
-    // Generic binary type sometimes used for Excel
+    // CSV alternative
+    "text/comma-separated-values",
+
+    // Android / Expo generic binary
     "application/octet-stream",
   ];
 
@@ -127,6 +139,16 @@ const fileFilter = (req, file, cb) => {
   console.log(
     "✅ FILE ACCEPTED:",
     file.originalname
+  );
+
+  console.log(
+    "Detected Extension:",
+    extension
+  );
+
+  console.log(
+    "Detected MIME Type:",
+    file.mimetype
   );
 
   cb(null, true);
