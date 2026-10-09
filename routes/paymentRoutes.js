@@ -24,7 +24,7 @@ router.get("/my/offer", protectAuth, getMyPaymentOffer);
 
 // Salon Admin: submit transaction ID and payment screenshot.
 router.post(
-  "/submit/:paymentId",
+  "/submit",
   protectAuth,
   upload.single("screenshot"),
   submitPaymentProof
