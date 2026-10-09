@@ -64,26 +64,51 @@ export const bulkUploadProducts = async (req, res) => {
     // --------------------------------------------------------
 
     const originalName = String(
-      req.file.originalname || ""
-    ).toLowerCase();
+  req.file.originalname || ""
+)
+  .trim()
+  .toLowerCase();
 
-    const allowedExtensions = [
-      ".xlsx",
-      ".xls",
-      ".csv",
-    ];
+const mimeType = String(
+  req.file.mimetype || ""
+)
+  .trim()
+  .toLowerCase();
 
-    const isAllowedExtension = allowedExtensions.some(
-      (extension) => originalName.endsWith(extension)
-    );
+console.log("PRODUCT UPLOAD FILE DETAILS:", {
+  originalname: req.file.originalname,
+  mimetype: req.file.mimetype,
+  size: req.file.size,
+});
 
-    if (!isAllowedExtension) {
-      return res.status(400).json({
-        success: false,
-        message: "Only XLSX, XLS, and CSV files are allowed",
-      });
-    }
+const allowedExtensions = [
+  ".xlsx",
+  ".xls",
+  ".csv",
+];
 
+const allowedMimeTypes = [
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/vnd.ms-excel",
+  "text/csv",
+  "application/csv",
+  "text/comma-separated-values",
+];
+
+const hasValidExtension = allowedExtensions.some(
+  (extension) => originalName.endsWith(extension)
+);
+
+const hasValidMimeType = allowedMimeTypes.includes(
+  mimeType
+);
+
+if (!hasValidExtension && !hasValidMimeType) {
+  return res.status(400).json({
+    success: false,
+    message: "Only XLSX, XLS, and CSV files are allowed",
+  });
+}
     // --------------------------------------------------------
     // READ EXCEL / CSV
     // --------------------------------------------------------
