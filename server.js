@@ -18,7 +18,7 @@ import expenseRoutes from "./routes/expenseRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
 import salaryRoutes from "./routes/salaryRoutes.js";
 import superAdminRoutes from "./routes/superAdminRoutes.js";
-
+import paymentRoutes from "./routes/paymentRoutes.js";
 dotenv.config();
 
 const app = express();
@@ -96,6 +96,7 @@ app.use(
   "/api/products",
   productRoutes
 );
+app.use("/api/payments", paymentRoutes);
 app.use("/api/salaries", salaryRoutes);
 app.use("/api/expenses", expenseRoutes);
 app.use("/api/notifications", notificationRoutes);
