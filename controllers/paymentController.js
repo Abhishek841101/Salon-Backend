@@ -175,26 +175,34 @@ export const getMyPaymentOffer = async (req, res) => {
 };
 
 // Salon Admin submits the UPI transaction ID and screenshot.
+
 export const submitPaymentProof = async (req, res) => {
   let uploadedPublicId = null;
 
   try {
-    const { paymentId } = req.params;
-    const { transactionId } = req.body;
+    const FIXED_AMOUNT = 299;
+    const FIXED_PLAN = "basic";
+    const FIXED_DURATION_DAYS = 30;
 
-    if (!mongoose.Types.ObjectId.isValid(paymentId)) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid payment offer ID.",
-      });
-    }
-
-    if (!["admin", "owner"].includes(req.user.role)) {
+    if (!["admin", "owner"].includes(req.user?.role)) {
       return res.status(403).json({
         success: false,
         message: "Only salon admins can submit payment.",
       });
     }
+
+    const salonId = getSalonId(req.user);
+
+    if (!salonId || !mongoose.Types.ObjectId.isValid(String(salonId))) {
+      return res.status(400).json({
+        success: false,
+        message: "Your account is not linked to a valid salon.",
+      });
+    }
+
+    const transactionId = String(
+      req.body?.transactionId || ""
+    ).trim();
 
     if (!req.file?.buffer) {
       return res.status(400).json({
@@ -203,37 +211,23 @@ export const submitPaymentProof = async (req, res) => {
       });
     }
 
-    const cleanTransactionId = String(transactionId || "").trim();
-
-    if (
-      cleanTransactionId.length < 4 ||
-      cleanTransactionId.length > 100
-    ) {
+    if (transactionId.length < 4 || transactionId.length > 100) {
       return res.status(400).json({
         success: false,
         message: "Enter a valid UPI transaction ID.",
       });
     }
 
-    const payment = await Payment.findOne({
-      _id: paymentId,
-      userId: req.user._id,
-      salonId: getSalonId(req.user),
-      status: { $in: ["offered", "rejected"] },
-    });
+    const salon = await Salon.findById(salonId);
 
-    if (!payment) {
+    if (!salon) {
       return res.status(404).json({
         success: false,
-        message:
-          "Payment offer not found, or it is already being reviewed.",
+        message: "Salon not found.",
       });
     }
 
-    const duplicate = await Payment.findOne({
-      transactionId: cleanTransactionId,
-      _id: { $ne: payment._id },
-    });
+    const duplicate = await Payment.findOne({ transactionId });
 
     if (duplicate) {
       return res.status(409).json({
@@ -242,27 +236,44 @@ export const submitPaymentProof = async (req, res) => {
       });
     }
 
+    const pendingPayment = await Payment.findOne({
+      salonId,
+      status: "pending",
+    });
+
+    if (pendingPayment) {
+      return res.status(409).json({
+        success: false,
+        message: "A payment request is already pending Super Admin review.",
+      });
+    }
+
     const uploadResult = await uploadScreenshot(req.file.buffer);
     uploadedPublicId = uploadResult.public_id;
 
-    payment.transactionId = cleanTransactionId;
-    payment.screenshotUrl = uploadResult.secure_url;
-    payment.screenshotPublicId = uploadResult.public_id;
-    payment.status = "pending";
-    payment.rejectionReason = "";
-    payment.reviewedBy = null;
-    payment.reviewedAt = null;
+    const payment = await Payment.create({
+      salonId,
+      userId: req.user._id,
+      plan: FIXED_PLAN,
+      amount: FIXED_AMOUNT,
+      durationDays: FIXED_DURATION_DAYS,
+      transactionId,
+      screenshotUrl: uploadResult.secure_url,
+      screenshotPublicId: uploadResult.public_id,
+      status: "pending",
+      paymentMethod: "upi",
+      rejectionReason: "",
+      reviewedBy: null,
+      reviewedAt: null,
+    });
 
-    await payment.save();
-
-    return res.status(200).json({
+    return res.status(201).json({
       success: true,
       message:
-        "Payment proof submitted. Your subscription will activate after Super Admin verification.",
+        "₹299 payment proof submitted. Waiting for Super Admin verification.",
       data: payment,
     });
   } catch (error) {
-    // Clean up the uploaded image if the database save failed.
     if (uploadedPublicId) {
       try {
         await cloudinaryClient.uploader.destroy(uploadedPublicId);
@@ -279,12 +290,14 @@ export const submitPaymentProof = async (req, res) => {
     }
 
     console.error("submitPaymentProof:", error);
+
     return res.status(500).json({
       success: false,
       message: "Could not submit payment proof.",
     });
   }
 };
+
 
 // Super Admin views submitted payment proofs.
 export const getAllPayments = async (req, res) => {
