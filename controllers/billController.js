@@ -167,7 +167,171 @@ export const createBill = async (
           "Selected staff / stylist is inactive",
       });
     }
+// ========================================
+// STAFF + SERVICE REVENUE REPORT
+// GET /api/bills/staff-service-revenue
+// ========================================
 
+export const getStaffServiceRevenue = async (req, res) => {
+  try {
+    const salonId = validateSalonAccess(req, res);
+    if (!salonId) return;
+
+    const { period = "month" } = req.query;
+    const selectedPeriod = String(period).toLowerCase();
+
+    // India local date boundaries
+    const now = new Date();
+    const indiaNow = new Date(
+      now.toLocaleString("en-US", { timeZone: "Asia/Kolkata" })
+    );
+
+    let from = null;
+    let to = new Date(now);
+
+    if (selectedPeriod !== "overall") {
+      const year = indiaNow.getFullYear();
+      const month = indiaNow.getMonth();
+      const day = indiaNow.getDate();
+
+      if (selectedPeriod === "today") {
+        from = new Date(`${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}T00:00:00+05:30`);
+      } else if (selectedPeriod === "week") {
+        const start = new Date(year, month, day);
+        const dayOfWeek = start.getDay();
+        start.setDate(start.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+        from = new Date(
+          `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}T00:00:00+05:30`
+        );
+      } else if (selectedPeriod === "month") {
+        from = new Date(
+          `${year}-${String(month + 1).padStart(2, "0")}-01T00:00:00+05:30`
+        );
+      } else if (selectedPeriod === "year") {
+        from = new Date(`${year}-01-01T00:00:00+05:30`);
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: "Invalid period. Use today, week, month, year or overall.",
+        });
+      }
+    }
+
+    const match = {
+      salonId: new mongoose.Types.ObjectId(String(salonId)),
+      paymentStatus: { $ne: "Cancelled" },
+      ...(from && { billDate: { $gte: from, $lte: to } }),
+    };
+
+    const bills = await Bill.find(match)
+      .select("stylist stylistName items grandTotal paymentStatus billDate")
+      .lean();
+
+    let totalRevenue = 0;
+    const staffMap = new Map();
+    const serviceMap = new Map();
+
+    for (const bill of bills) {
+      const billTotal = Number(bill.grandTotal || 0);
+      totalRevenue += billTotal;
+
+      const staffId = String(bill.stylist || "unassigned");
+      const staffName = bill.stylistName || "Unknown Staff";
+
+      if (!staffMap.has(staffId)) {
+        staffMap.set(staffId, {
+          staffId,
+          staffName,
+          totalRevenue: 0,
+          totalBills: 0,
+          services: new Map(),
+        });
+      }
+
+      const staff = staffMap.get(staffId);
+      staff.totalRevenue += billTotal;
+      staff.totalBills += 1;
+
+      for (const item of bill.items || []) {
+        const serviceId = String(item.service || item.serviceName || "unknown");
+        const serviceName = item.serviceName || "Unknown Service";
+        const quantity = Number(item.quantity || 1);
+        const amount = Number(
+          item.total ?? Number(item.price || 0) * quantity
+        );
+
+        if (!serviceMap.has(serviceId)) {
+          serviceMap.set(serviceId, {
+            serviceId,
+            serviceName,
+            quantity: 0,
+            billCount: 0,
+            revenue: 0,
+          });
+        }
+
+        const service = serviceMap.get(serviceId);
+        service.quantity += quantity;
+        service.billCount += 1;
+        service.revenue += amount;
+
+        if (!staff.services.has(serviceId)) {
+          staff.services.set(serviceId, {
+            serviceId,
+            serviceName,
+            quantity: 0,
+            billCount: 0,
+            revenue: 0,
+          });
+        }
+
+        const staffService = staff.services.get(serviceId);
+        staffService.quantity += quantity;
+        staffService.billCount += 1;
+        staffService.revenue += amount;
+      }
+    }
+
+    const roundMoney = (value) =>
+      Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+
+    const services = Array.from(serviceMap.values())
+      .map((item) => ({ ...item, revenue: roundMoney(item.revenue) }))
+      .sort((a, b) => b.revenue - a.revenue);
+
+    const staff = Array.from(staffMap.values())
+      .map((item) => ({
+        staffId: item.staffId,
+        staffName: item.staffName,
+        totalRevenue: roundMoney(item.totalRevenue),
+        totalBills: item.totalBills,
+        services: Array.from(item.services.values())
+          .map((service) => ({
+            ...service,
+            revenue: roundMoney(service.revenue),
+          }))
+          .sort((a, b) => b.revenue - a.revenue),
+      }))
+      .sort((a, b) => b.totalRevenue - a.totalRevenue);
+
+    return res.status(200).json({
+      success: true,
+      period: selectedPeriod,
+      totalRevenue: roundMoney(totalRevenue),
+      totalBills: bills.length,
+      totalServicesSold: services.reduce((sum, item) => sum + item.quantity, 0),
+      services,
+      staff,
+    });
+  } catch (error) {
+    console.error("STAFF SERVICE REVENUE ERROR:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to load staff and service revenue",
+      error: error.message,
+    });
+  }
+};
     // ========================================
     // GET SERVICES
     // IMPORTANT:

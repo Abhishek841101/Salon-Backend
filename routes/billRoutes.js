@@ -8,6 +8,7 @@ import {
   getBillByInvoiceNumber,
   updatePaymentStatus,
   getTotalRevenue,
+  getStaffServiceRevenue,
 } from "../controllers/billController.js";
 
 import {
@@ -63,7 +64,11 @@ router.get(
   protectAdmin,
   getBillByInvoiceNumber
 );
-
+router.get(
+  "/staff-service-revenue",
+  protectAdmin,
+  getStaffServiceRevenue
+);
 // ========================================
 // GET SINGLE BILL
 // GET /api/bills/:id
