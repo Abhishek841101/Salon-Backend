@@ -9,6 +9,7 @@ import {
   deactivateClient,
   reactivateClient,
   deleteClient,
+  bulkImportClients,
 } from "../controllers/clientController.js";
 
 import { protectAdmin } from "../middleware/authMiddleware.js";
@@ -21,7 +22,7 @@ const router = express.Router();
 // ========================================
 
 // ========================================
-// ADD CLIENT
+// ADD SINGLE CLIENT
 // ========================================
 
 router.post(
@@ -29,6 +30,18 @@ router.post(
   protectAdmin,
   upload.single("profileImage"),
   createClient
+);
+
+// ========================================
+// BULK IMPORT CLIENTS FROM EXCEL / CSV
+// IMPORTANT: Keep before /:id
+// ========================================
+
+router.post(
+  "/bulk",
+  protectAdmin,
+  upload.single("file"),
+  bulkImportClients
 );
 
 // ========================================
@@ -43,7 +56,6 @@ router.get(
 
 // ========================================
 // GET CLIENT HISTORY
-// IMPORTANT: Keep before /:id
 // ========================================
 
 router.get(
