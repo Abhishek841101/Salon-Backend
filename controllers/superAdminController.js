@@ -174,19 +174,11 @@ export const getAllSalons = async (req, res) => {
 // ACTIVATE / ASSIGN PLAN
 // ========================================
 
+
 export const activateSalonPlan = async (req, res) => {
   try {
     const { salonId } = req.params;
-
-    const {
-      plan,
-      amount,
-      durationDays,
-    } = req.body;
-
-    // ----------------------------------------
-    // VALIDATION
-    // ----------------------------------------
+    const { plan, amount, durationDays } = req.body;
 
     if (!mongoose.Types.ObjectId.isValid(salonId)) {
       return res.status(400).json({
@@ -195,48 +187,31 @@ export const activateSalonPlan = async (req, res) => {
       });
     }
 
-    const allowedPlans = [
-      "basic",
-      "professional",
-      "premium",
-    ];
+    const allowedPlans = ["basic", "professional", "premium"];
 
     if (!allowedPlans.includes(plan)) {
       return res.status(400).json({
         success: false,
-        message:
-          "Invalid plan. Use basic, professional or premium",
+        message: "Invalid plan",
       });
     }
 
     const numericAmount = Number(amount);
+    const days = Number(durationDays);
 
-    if (
-      Number.isNaN(numericAmount) ||
-      numericAmount < 0
-    ) {
+    if (!Number.isFinite(numericAmount) || numericAmount < 0) {
       return res.status(400).json({
         success: false,
         message: "Valid amount is required",
       });
     }
 
-    const days = Number(durationDays);
-
-    if (
-      Number.isNaN(days) ||
-      days <= 0
-    ) {
+    if (!Number.isInteger(days) || days <= 0 || days > 3650) {
       return res.status(400).json({
         success: false,
-        message:
-          "durationDays must be greater than 0",
+        message: "Duration must be between 1 and 3650 days",
       });
     }
-
-    // ----------------------------------------
-    // FIND SALON
-    // ----------------------------------------
 
     const salon = await Salon.findById(salonId);
 
@@ -247,9 +222,114 @@ export const activateSalonPlan = async (req, res) => {
       });
     }
 
-    // ----------------------------------------
-    // FIND SALON ADMIN
-    // ----------------------------------------
+    const admin = await User.findOne({
+      salonId: salon._id,
+      role: "admin",
+    });
+
+    if (!admin) {
+      return res.status(404).json({
+        success: false,
+        message: "Salon admin not found",
+      });
+    }
+
+    const now = new Date();
+    const endDate = new Date(now);
+
+    endDate.setUTCDate(endDate.getUTCDate() + days);
+
+    // Update individual fields.
+    // Preserve existing extension histories.
+    admin.subscription.status = "active";
+    admin.subscription.plan = plan;
+    admin.subscription.startDate = now;
+    admin.subscription.endDate = endDate;
+    admin.subscription.amount = numericAmount;
+
+    // Paid plan replaces temporary free access.
+    admin.subscription.temporaryAccessEndDate = null;
+
+    admin.isActive = true;
+
+    await admin.save();
+
+    salon.isActive = true;
+    await salon.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Salon plan activated successfully",
+      salon: {
+        id: salon._id,
+        name: salon.name,
+      },
+      subscription: {
+        status: "active",
+        plan,
+        amount: numericAmount,
+        startDate: now,
+        endDate,
+        durationDays: days,
+      },
+    });
+
+  } catch (error) {
+    console.error("ACTIVATE SALON PLAN ERROR:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Failed to activate salon plan",
+    });
+  }
+};
+
+
+// ========================================
+// EXTEND SALON FREE ACCESS
+// ========================================
+
+
+export const extendSalonTrial = async (req, res) => {
+  try {
+    const { salonId } = req.params;
+    const { durationDays, reason = "" } = req.body;
+
+    // Validate salon ID
+    if (!mongoose.Types.ObjectId.isValid(salonId)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid salon ID",
+      });
+    }
+
+    // Validate days
+    const days = Number(durationDays);
+
+    if (!Number.isInteger(days) || days <= 0 || days > 365) {
+      return res.status(400).json({
+        success: false,
+        message: "Extension must be between 1 and 365 days",
+      });
+    }
+
+    const superAdminId = req.user?._id;
+
+    if (!superAdminId) {
+      return res.status(401).json({
+        success: false,
+        message: "Super Admin authentication required",
+      });
+    }
+
+    const salon = await Salon.findById(salonId);
+
+    if (!salon) {
+      return res.status(404).json({
+        success: false,
+        message: "Salon not found",
+      });
+    }
 
     const admin = await User.findOne({
       salonId: salon._id,
@@ -259,59 +339,213 @@ export const activateSalonPlan = async (req, res) => {
     if (!admin) {
       return res.status(404).json({
         success: false,
-        message:
-          "Salon admin not found",
+        message: "Salon admin not found",
+      });
+    }
+
+    const subscription = admin.subscription;
+
+    if (!subscription) {
+      return res.status(400).json({
+        success: false,
+        message: "Subscription not found",
+      });
+    }
+
+    const now = new Date();
+
+    const reasonText =
+      typeof reason === "string"
+        ? reason.trim().slice(0, 500)
+        : "";
+
+    // Cancelled subscriptions are not eligible
+    if (subscription.status === "cancelled") {
+      return res.status(400).json({
+        success: false,
+        message: "Cancelled subscription cannot be extended",
       });
     }
 
     // ----------------------------------------
-    // SUBSCRIPTION DATES
+    // CASE 1: ACTIVE PAID PLAN PROTECTION
     // ----------------------------------------
 
-    const startDate = new Date();
+    if (
+      subscription.status === "active" &&
+      (
+        !subscription.endDate ||
+        new Date(subscription.endDate) > now
+      )
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Active paid plan cannot receive free extension",
+      });
+    }
 
-    const endDate = new Date(startDate);
+    // ----------------------------------------
+    // CASE 2: EXPIRED PAID PLAN
+    // ----------------------------------------
 
-    endDate.setDate(
-      endDate.getDate() + days
+    const hasPaidPlan =
+      Boolean(subscription.plan && subscription.endDate);
+
+    const isExpiredPaidPlan =
+      hasPaidPlan &&
+      (
+        subscription.status === "expired" ||
+        (
+          subscription.status === "active" &&
+          new Date(subscription.endDate) <= now
+        )
+      );
+
+    if (isExpiredPaidPlan) {
+      const previousEndDate =
+        subscription.temporaryAccessEndDate || null;
+
+      let extensionStartDate = now;
+
+      if (
+        previousEndDate &&
+        new Date(previousEndDate) > now
+      ) {
+        extensionStartDate = new Date(previousEndDate);
+      }
+
+      const newEndDate = new Date(extensionStartDate);
+
+      newEndDate.setUTCDate(
+        newEndDate.getUTCDate() + days
+      );
+
+      // Keep original paid plan untouched.
+      subscription.status = "expired";
+
+      subscription.temporaryAccessEndDate = newEndDate;
+
+      if (!subscription.temporaryAccessHistory) {
+        subscription.temporaryAccessHistory = [];
+      }
+
+      subscription.temporaryAccessHistory.push({
+        days,
+        previousEndDate,
+        newEndDate,
+        extendedBy: superAdminId,
+        extendedAt: now,
+        reason: reasonText,
+      });
+
+      admin.isActive = true;
+
+      await admin.save();
+
+      salon.isActive = true;
+      await salon.save();
+
+      return res.status(200).json({
+        success: true,
+        message: `Temporary free access granted for ${days} days`,
+
+        accessType: "temporary_free",
+
+        salon: {
+          id: salon._id,
+          name: salon.name,
+        },
+
+        subscription: {
+          status: subscription.status,
+          originalPlan: subscription.plan,
+          originalAmount: subscription.amount,
+          originalStartDate: subscription.startDate,
+          originalEndDate: subscription.endDate,
+          temporaryAccessEndDate: newEndDate,
+          durationDays: days,
+        },
+      });
+    }
+
+    // ----------------------------------------
+    // CASE 3: TRIAL EXTENSION
+    // ----------------------------------------
+
+    const isTrial =
+      subscription.status === "trial" ||
+      (
+        subscription.status === "expired" &&
+        !subscription.plan &&
+        subscription.trialEndDate
+      );
+
+    if (!isTrial) {
+      return res.status(400).json({
+        success: false,
+        message: "This subscription is not eligible for free extension",
+      });
+    }
+
+    const previousEndDate =
+      subscription.trialEndDate || null;
+
+    let extensionStartDate = now;
+
+    if (
+      previousEndDate &&
+      new Date(previousEndDate) > now
+    ) {
+      extensionStartDate = new Date(previousEndDate);
+    }
+
+    const newEndDate = new Date(extensionStartDate);
+
+    newEndDate.setUTCDate(
+      newEndDate.getUTCDate() + days
     );
 
-    // ----------------------------------------
-    // ACTIVATE PLAN
-    // ----------------------------------------
+    subscription.status = "trial";
 
-    admin.subscription = {
-      status: "active",
-      plan,
+    subscription.trialStartDate =
+      subscription.trialStartDate || now;
 
-      trialStartDate:
-        admin.subscription?.trialStartDate || null,
+    subscription.trialEndDate = newEndDate;
 
-      trialEndDate:
-        admin.subscription?.trialEndDate || null,
+    subscription.trialExtensionDays =
+      Number(subscription.trialExtensionDays || 0) + days;
 
-      startDate,
-      endDate,
+    subscription.trialExtensionCount =
+      Number(subscription.trialExtensionCount || 0) + 1;
 
-      amount: numericAmount,
-    };
+    subscription.lastTrialExtendedAt = now;
+    subscription.lastTrialExtendedBy = superAdminId;
+
+    if (!subscription.trialExtensionHistory) {
+      subscription.trialExtensionHistory = [];
+    }
+
+    subscription.trialExtensionHistory.push({
+      days,
+      previousEndDate,
+      newEndDate,
+      extendedBy: superAdminId,
+      extendedAt: now,
+      reason: reasonText,
+    });
 
     admin.isActive = true;
 
     await admin.save();
 
     salon.isActive = true;
-
     await salon.save();
-
-    // ----------------------------------------
-    // RESPONSE
-    // ----------------------------------------
 
     return res.status(200).json({
       success: true,
-      message:
-        "Salon plan activated successfully",
+      message: `Trial extended successfully by ${days} days`,
+
+      accessType: "trial",
 
       salon: {
         id: salon._id,
@@ -319,24 +553,20 @@ export const activateSalonPlan = async (req, res) => {
       },
 
       subscription: {
-        status: "active",
-        plan,
-        amount: numericAmount,
-        startDate,
-        endDate,
+        status: "trial",
+        trialEndDate: newEndDate,
+        trialExtensionDays: subscription.trialExtensionDays,
+        trialExtensionCount: subscription.trialExtensionCount,
         durationDays: days,
       },
     });
+
   } catch (error) {
-    console.error(
-      "ACTIVATE SALON PLAN ERROR:",
-      error
-    );
+    console.error("EXTEND SALON TRIAL ERROR:", error);
 
     return res.status(500).json({
       success: false,
-      message:
-        "Failed to activate salon plan",
+      message: "Failed to extend salon free access",
     });
   }
 };

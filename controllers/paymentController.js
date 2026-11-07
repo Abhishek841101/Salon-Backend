@@ -16,7 +16,7 @@ const uploadScreenshot = (buffer) =>
   new Promise((resolve, reject) => {
     const stream = cloudinaryClient.uploader.upload_stream(
       {
-        folder: "glow-salon/payment-proofs",
+        folder: "GLOW-salon/payment-proofs",
         resource_type: "image",
       },
       (error, result) => {

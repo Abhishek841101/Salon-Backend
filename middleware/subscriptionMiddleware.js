@@ -16,19 +16,15 @@ export const requireActiveSubscription = async (
     }
 
     // Salon admin/staff ke liye user required
-    if (!req.user?.id) {
-      return res.status(401).json({
-        success: false,
-        message: "Authentication required",
-      });
-    }
+   if (!req.user?._id) {
+  return res.status(401).json({
+    success: false,
+    message: "Authentication required",
+  });
+}
 
-    const user = await User.findById(
-      req.user.id
-    ).select(
-      "role salonId isActive subscription"
-    );
-
+const user = await User.findById(req.user._id)
+  .select("role salonId isActive subscription");
     if (!user) {
       return res.status(401).json({
         success: false,
