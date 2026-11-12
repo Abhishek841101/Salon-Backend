@@ -1,10 +1,10 @@
-
 import mongoose from "mongoose";
 
 import Bill from "../models/Bill.js";
 import Client from "../models/Client.js";
 import Service from "../models/Service.js";
 import Stylist from "../models/Stylist.js";
+import Salon from "../models/Salon.js";
 
 // ========================================
 // HELPERS
@@ -30,6 +30,16 @@ const validateSalonAccess = (req, res) => {
   }
 
   return salonId;
+};
+
+// ========================================
+// GET CURRENT SALON DETAILS
+// ========================================
+
+const getSalonDetails = async (salonId) => {
+  return await Salon.findById(salonId)
+    .select("name ownerName email phone")
+    .lean();
 };
 
 // ========================================
@@ -249,8 +259,7 @@ export const createBill = async (
         total,
       });
     }
-
-    // ========================================
+        // ========================================
     // CALCULATE TOTALS
     // ========================================
 
@@ -412,14 +421,22 @@ export const createBill = async (
     await client.save();
 
     // ========================================
+    // SALON DETAILS FOR INVOICE
+    // ========================================
+
+    const salon = await getSalonDetails(salonId);
+
+    // ========================================
     // RESPONSE
     // ========================================
 
     return res.status(201).json({
       success: true,
-      message:
-        "Bill created successfully",
-      bill,
+      message: "Bill created successfully",
+      bill: {
+        ...bill.toObject(),
+        salon,
+      },
     });
   } catch (error) {
     console.error(
@@ -585,10 +602,17 @@ export const getBills = async (
         total / perPage
       );
 
+    const salon = await getSalonDetails(salonId);
+
+    const billsWithSalon = bills.map((bill) => ({
+      ...bill.toObject(),
+      salon,
+    }));
+
     return res.status(200).json({
       success: true,
 
-      bills,
+      bills: billsWithSalon,
 
       pagination: {
         total,
@@ -618,6 +642,10 @@ export const getBills = async (
   }
 };
 
+// ========================================
+// GET SINGLE BILL
+// GET /api/bills/:id
+// ========================================
 // ========================================
 // GET SINGLE BILL
 // GET /api/bills/:id
@@ -677,9 +705,14 @@ export const getBillById = async (
       });
     }
 
+    const salon = await getSalonDetails(salonId);
+
     return res.status(200).json({
       success: true,
-      bill,
+      bill: {
+        ...bill.toObject(),
+        salon,
+      },
     });
   } catch (error) {
     console.error(
@@ -694,6 +727,7 @@ export const getBillById = async (
     });
   }
 };
+
 // ========================================
 // STAFF + SERVICE REVENUE REPORT
 // GET /api/bills/staff-service-revenue
@@ -859,6 +893,7 @@ export const getStaffServiceRevenue = async (req, res) => {
     });
   }
 };
+
 // ========================================
 // GET BILL BY INVOICE NUMBER
 // GET /api/bills/invoice/:invoiceNumber
@@ -914,9 +949,14 @@ export const getBillByInvoiceNumber =
         });
       }
 
+      const salon = await getSalonDetails(salonId);
+
       return res.status(200).json({
         success: true,
-        bill,
+        bill: {
+          ...bill.toObject(),
+          salon,
+        },
       });
     } catch (error) {
       console.error(
@@ -931,13 +971,7 @@ export const getBillByInvoiceNumber =
       });
     }
   };
-
-// ========================================
-// UPDATE PAYMENT STATUS
-// PATCH /api/bills/:id/payment
-// ========================================
-
-export const updatePaymentStatus =
+  export const updatePaymentStatus =
   async (req, res) => {
     try {
       // ========================================
@@ -1189,22 +1223,8 @@ const parseCustomDate = (
 
 // ========================================
 // GET TOTAL REVENUE
-//
-// GET /api/bills/revenue
-//
-// Supported:
-// ?period=today
-// ?period=week
-// ?period=month
-// ?period=quarter
-// ?period=year
-// ?period=overall
-//
-// Custom:
-// ?from=2026-10-01&to=2026-10-15
-// ========================================
 
-export const getTotalRevenue =
+// ========================================export const getTotalRevenue =
   async (req, res) => {
     try {
       // ========================================
@@ -1219,41 +1239,35 @@ export const getTotalRevenue =
 
       if (!salonId) return;
 
+      // ========================================
+      // QUERY PARAMETERS
+      // ========================================
+
       const {
-        period = "overall",
+        period = "month",
         from,
         to,
       } = req.query;
 
       const selectedPeriod =
-        String(
-          period || "overall"
-        )
-          .trim()
-          .toLowerCase();
+        String(period).toLowerCase();
 
       // ========================================
-      // BASE REVENUE FILTER
+      // BASE MATCH
       // ========================================
 
-      // IMPORTANT:
-      // Revenue is ONLY for current salon.
       const match = {
         salonId:
           new mongoose.Types.ObjectId(
-            salonId
+            String(salonId)
           ),
-
-        paymentStatus: {
-          $ne: "Cancelled",
-        },
       };
 
       let startDate = null;
       let endDate = null;
 
       // ========================================
-      // CUSTOM DATE RANGE
+      // CUSTOM DATE FILTER
       // ========================================
 
       if (from || to) {
@@ -1267,13 +1281,13 @@ export const getTotalRevenue =
 
         startDate =
           parseCustomDate(
-            String(from).trim(),
+            from,
             false
           );
 
         endDate =
           parseCustomDate(
-            String(to).trim(),
+            to,
             true
           );
 
@@ -1289,232 +1303,231 @@ export const getTotalRevenue =
         }
 
         if (
-          startDate >
-          endDate
+          startDate > endDate
         ) {
           return res.status(400).json({
             success: false,
             message:
-              "From date cannot be greater than To date",
+              "From date cannot be after to date",
           });
         }
-      }
+      } else {
+        // ========================================
+        // INDIA DATE
+        // ========================================
 
-      // ========================================
-      // PREDEFINED PERIOD
-      // ========================================
+        const today =
+          getIndiaDateParts();
 
-      if (!from && !to) {
-        const validPeriods = [
-          "today",
-          "week",
-          "month",
-          "quarter",
-          "year",
-          "overall",
-        ];
+        // ========================================
+        // OVERALL
+        // ========================================
 
         if (
-          !validPeriods.includes(
+          selectedPeriod ===
+          "overall"
+        ) {
+          startDate = null;
+          endDate = null;
+        }
+
+        // ========================================
+        // TODAY
+        // ========================================
+
+        if (
+          selectedPeriod ===
+          "today"
+        ) {
+          startDate =
+            makeIndiaDate(
+              today.year,
+              today.month,
+              today.day,
+              false
+            );
+
+          endDate =
+            makeIndiaDate(
+              today.year,
+              today.month,
+              today.day,
+              true
+            );
+        }
+
+        // ========================================
+        // LAST 7 DAYS
+        // Today + previous 6 days
+        // ========================================
+
+        if (
+          selectedPeriod ===
+          "week"
+        ) {
+          const start =
+            new Date(
+              Date.UTC(
+                today.year,
+                today.month - 1,
+                today.day
+              )
+            );
+
+          start.setUTCDate(
+            start.getUTCDate() -
+              6
+          );
+
+          startDate =
+            makeIndiaDate(
+              start.getUTCFullYear(),
+              start.getUTCMonth() + 1,
+              start.getUTCDate(),
+              false
+            );
+
+          endDate =
+            makeIndiaDate(
+              today.year,
+              today.month,
+              today.day,
+              true
+            );
+        }
+
+        // ========================================
+        // THIS MONTH
+        // ========================================
+
+        if (
+          selectedPeriod ===
+          "month"
+        ) {
+          startDate =
+            makeIndiaDate(
+              today.year,
+              today.month,
+              1,
+              false
+            );
+
+          endDate =
+            makeIndiaDate(
+              today.year,
+              today.month,
+              today.day,
+              true
+            );
+        }
+
+        // ========================================
+        // LAST 3 MONTHS
+        // Current month + previous 2 months
+        // ========================================
+
+        if (
+          selectedPeriod ===
+          "quarter"
+        ) {
+          const start =
+            new Date(
+              Date.UTC(
+                today.year,
+                today.month - 1,
+                1
+              )
+            );
+
+          start.setUTCMonth(
+            start.getUTCMonth() -
+              2
+          );
+
+          startDate =
+            makeIndiaDate(
+              start.getUTCFullYear(),
+              start.getUTCMonth() + 1,
+              1,
+              false
+            );
+
+          endDate =
+            makeIndiaDate(
+              today.year,
+              today.month,
+              today.day,
+              true
+            );
+        }
+
+        // ========================================
+        // THIS YEAR
+        // ========================================
+
+        if (
+          selectedPeriod ===
+          "year"
+        ) {
+          startDate =
+            makeIndiaDate(
+              today.year,
+              1,
+              1,
+              false
+            );
+
+          endDate =
+            makeIndiaDate(
+              today.year,
+              today.month,
+              today.day,
+              true
+            );
+        }
+
+        // ========================================
+        // INVALID PERIOD
+        // ========================================
+
+        if (
+          ![
+            "overall",
+            "today",
+            "week",
+            "month",
+            "quarter",
+            "year",
+          ].includes(
             selectedPeriod
           )
         ) {
           return res.status(400).json({
             success: false,
             message:
-              "Invalid period. Use today, week, month, quarter, year or overall.",
+              "Invalid period",
           });
-        }
-
-        // ======================================
-        // OVERALL
-        // ======================================
-
-        if (
-          selectedPeriod ===
-          "overall"
-        ) {
-          // No billDate filter.
-          // All non-cancelled bills
-          // for this salon are included.
-        } else {
-          const today =
-            getIndiaDateParts();
-
-          // ====================================
-          // TODAY
-          // ====================================
-
-          if (
-            selectedPeriod ===
-            "today"
-          ) {
-            startDate =
-              makeIndiaDate(
-                today.year,
-                today.month,
-                today.day,
-                false
-              );
-
-            endDate =
-              makeIndiaDate(
-                today.year,
-                today.month,
-                today.day,
-                true
-              );
-          }
-
-          // ====================================
-          // LAST 7 DAYS
-          // Today + previous 6 days
-          // ====================================
-
-          if (
-            selectedPeriod ===
-            "week"
-          ) {
-            const start =
-              new Date(
-                Date.UTC(
-                  today.year,
-                  today.month - 1,
-                  today.day
-                )
-              );
-
-            start.setUTCDate(
-              start.getUTCDate() -
-                6
-            );
-
-            startDate =
-              makeIndiaDate(
-                start.getUTCFullYear(),
-                start.getUTCMonth() + 1,
-                start.getUTCDate(),
-                false
-              );
-
-            endDate =
-              makeIndiaDate(
-                today.year,
-                today.month,
-                today.day,
-                true
-              );
-          }
-
-          // ====================================
-          // THIS MONTH
-          // ====================================
-
-          if (
-            selectedPeriod ===
-            "month"
-          ) {
-            startDate =
-              makeIndiaDate(
-                today.year,
-                today.month,
-                1,
-                false
-              );
-
-            endDate =
-              makeIndiaDate(
-                today.year,
-                today.month,
-                today.day,
-                true
-              );
-          }
-
-          // ====================================
-          // LAST 3 MONTHS
-          // Current month + previous 2 months
-          // ====================================
-
-          if (
-            selectedPeriod ===
-            "quarter"
-          ) {
-            const start =
-              new Date(
-                Date.UTC(
-                  today.year,
-                  today.month - 1,
-                  1
-                )
-              );
-
-            start.setUTCMonth(
-              start.getUTCMonth() -
-                2
-            );
-
-            startDate =
-              makeIndiaDate(
-                start.getUTCFullYear(),
-                start.getUTCMonth() + 1,
-                1,
-                false
-              );
-
-            endDate =
-              makeIndiaDate(
-                today.year,
-                today.month,
-                today.day,
-                true
-              );
-          }
-
-          // ====================================
-          // THIS YEAR
-          // ====================================
-
-          if (
-            selectedPeriod ===
-            "year"
-          ) {
-            startDate =
-              makeIndiaDate(
-                today.year,
-                1,
-                1,
-                false
-              );
-
-            endDate =
-              makeIndiaDate(
-                today.year,
-                today.month,
-                today.day,
-                true
-              );
-          }
-
-          // ====================================
-          // APPLY DATE FILTER
-          // ====================================
-
-          match.billDate = {
-            $gte: startDate,
-            $lte: endDate,
-          };
         }
       }
 
       // ========================================
-      // CUSTOM DATE FILTER
+      // APPLY DATE FILTER
       // ========================================
 
       if (
         (from || to) &&
         startDate &&
         endDate
+      ) {
+        match.billDate = {
+          $gte: startDate,
+          $lte: endDate,
+        };
+      } else if (
+        !from &&
+        !to &&
+        selectedPeriod !==
+          "overall"
       ) {
         match.billDate = {
           $gte: startDate,
