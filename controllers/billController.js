@@ -1224,8 +1224,8 @@ const parseCustomDate = (
 // ========================================
 // GET TOTAL REVENUE
 
-// ========================================export const getTotalRevenue =
-  async (req, res) => {
+// ========================================
+export const getTotalRevenue =async (req, res) => {
     try {
       // ========================================
       // SALON ACCESS
