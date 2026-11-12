@@ -2,18 +2,61 @@ import mongoose from "mongoose";
 import Salon from "../models/Salon.js";
 import User from "../models/User.js";
 
+
+
+// ========================================
+// AUTO EXPIRE SUBSCRIPTIONS
+// ========================================
+
+
+const expireSubscriptions = async () => {
+  const now = new Date();
+
+  // Expire paid subscriptions
+  await User.updateMany(
+    {
+      role: "admin",
+      "subscription.status": "active",
+      "subscription.endDate": { $lte: now },
+    },
+    {
+      $set: {
+        "subscription.status": "expired",
+      },
+    }
+  );
+
+  // Expire trial subscriptions
+  await User.updateMany(
+    {
+      role: "admin",
+      "subscription.status": "trial",
+      "subscription.trialEndDate": { $lte: now },
+    },
+    {
+      $set: {
+        "subscription.status": "expired",
+      },
+    }
+  );
+};
+
 // ========================================
 // GET SUPER ADMIN DASHBOARD
 // ========================================
 
+
+
 export const getSuperAdminDashboard = async (req, res) => {
   try {
+    // Automatically expire subscriptions
+    await expireSubscriptions();
+
     const users = await User.find({
       role: "admin",
       salonId: { $ne: null },
     }).select("salonId subscription");
 
-    let totalSalons = 0;
     let activeSalons = 0;
     let trialSalons = 0;
     let expiredSalons = 0;
@@ -23,7 +66,7 @@ export const getSuperAdminDashboard = async (req, res) => {
       .map((user) => user.salonId)
       .filter(Boolean);
 
-    totalSalons = new Set(
+    const totalSalons = new Set(
       salonIds.map((id) => id.toString())
     ).size;
 
@@ -31,32 +74,19 @@ export const getSuperAdminDashboard = async (req, res) => {
       const subscription = user.subscription;
 
       if (!subscription) {
-        continue;
-      }
-
-      // Check trial expiry
-      if (
-        subscription.status === "trial" &&
-        subscription.trialEndDate &&
-        new Date() > new Date(subscription.trialEndDate)
-      ) {
         expiredSalons++;
         continue;
       }
 
       if (subscription.status === "trial") {
         trialSalons++;
-      }
-
-      if (subscription.status === "active") {
+      } else if (subscription.status === "active") {
         activeSalons++;
 
         totalRevenue += Number(
           subscription.amount || 0
         );
-      }
-
-      if (subscription.status === "expired") {
+      } else if (subscription.status === "expired") {
         expiredSalons++;
       }
     }
@@ -72,10 +102,7 @@ export const getSuperAdminDashboard = async (req, res) => {
       },
     });
   } catch (error) {
-    console.error(
-      "SUPER ADMIN DASHBOARD ERROR:",
-      error
-    );
+    console.error("SUPER ADMIN DASHBOARD ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -84,12 +111,19 @@ export const getSuperAdminDashboard = async (req, res) => {
   }
 };
 
+
 // ========================================
 // GET ALL SALONS
 // ========================================
 
+
+
 export const getAllSalons = async (req, res) => {
   try {
+    // Automatically expire subscriptions
+    await expireSubscriptions();
+
+    // Fetch all salons
     const salons = await Salon.find()
       .sort({ createdAt: -1 })
       .lean();
@@ -105,6 +139,7 @@ export const getAllSalons = async (req, res) => {
       )
       .lean();
 
+    // Prepare salon response
     const result = salons.map((salon) => {
       const admin = users.find(
         (user) =>
@@ -112,23 +147,11 @@ export const getAllSalons = async (req, res) => {
           salon._id.toString()
       );
 
-      let subscription = admin?.subscription || {
+      const subscription = admin?.subscription || {
         status: "expired",
         plan: null,
         amount: 0,
       };
-
-      // Dynamically mark expired trial
-      if (
-        subscription.status === "trial" &&
-        subscription.trialEndDate &&
-        new Date() > new Date(subscription.trialEndDate)
-      ) {
-        subscription = {
-          ...subscription,
-          status: "expired",
-        };
-      }
 
       return {
         id: salon._id,
@@ -158,10 +181,7 @@ export const getAllSalons = async (req, res) => {
       salons: result,
     });
   } catch (error) {
-    console.error(
-      "GET ALL SALONS ERROR:",
-      error
-    );
+    console.error("GET ALL SALONS ERROR:", error);
 
     return res.status(500).json({
       success: false,
@@ -169,6 +189,7 @@ export const getAllSalons = async (req, res) => {
     });
   }
 };
+
 
 // ========================================
 // ACTIVATE / ASSIGN PLAN
