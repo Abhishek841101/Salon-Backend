@@ -104,16 +104,32 @@ export const createClient = async (req, res) => {
     }
 
     const normalizedPhone = String(phone).trim();
+    const normalizedEmail = email
+      ? String(email).trim().toLowerCase()
+      : "";
+
+    const duplicateConditions = [
+      { phone: normalizedPhone },
+    ];
+
+    if (normalizedEmail) {
+      duplicateConditions.push({ email: normalizedEmail });
+    }
 
     const existingClient = await Client.findOne({
       salonId,
-      phone: normalizedPhone,
+      $or: duplicateConditions,
     });
 
     if (existingClient) {
+      const message =
+        existingClient.phone === normalizedPhone
+          ? "Phone number already exists in this salon"
+          : "Email already exists in this salon";
+
       return res.status(409).json({
         success: false,
-        message: "Client with this phone number already exists",
+        message,
       });
     }
 
@@ -140,7 +156,7 @@ export const createClient = async (req, res) => {
       salonId,
       name: String(name).trim(),
       phone: normalizedPhone,
-      email: email ? String(email).trim().toLowerCase() : "",
+      email: normalizedEmail,
       gender: gender || "",
       dateOfBirth:
         dateOfBirth && dateOfBirth !== ""
@@ -173,9 +189,13 @@ export const createClient = async (req, res) => {
     console.error(error);
 
     if (error.code === 11000) {
+      const isEmailDuplicate = error.keyPattern?.email;
+
       return res.status(409).json({
         success: false,
-        message: "Client with this phone number already exists",
+        message: isEmailDuplicate
+          ? "Email already exists in this salon"
+          : "Phone number already exists in this salon",
       });
     }
 
@@ -295,6 +315,7 @@ export const bulkImportClients = async (req, res) => {
     const errors = [];
     const validRows = [];
     const seenPhones = new Set();
+    const seenEmails = new Set();
 
     const getValue = (row, aliases) => {
       const normalizedRow = {};
@@ -424,7 +445,15 @@ export const bulkImportClients = async (req, res) => {
         continue;
       }
 
-      seenPhones.add(phone);
+      if (email && seenEmails.has(email)) {
+        errors.push({
+          row: rowNumber,
+          name,
+          phone,
+          message: "Duplicate email in uploaded file",
+        });
+        continue;
+      }
 
       const dateOfBirth = parseImportDate(rawDob);
       const anniversaryDate = parseImportDate(rawAnniversary);
@@ -447,6 +476,13 @@ export const bulkImportClients = async (req, res) => {
           message: "Invalid anniversary date",
         });
         continue;
+      }
+
+      // Reserve identifiers only after every row validation has passed.
+      seenPhones.add(phone);
+
+      if (email) {
+        seenEmails.add(email);
       }
 
       validRows.push({
@@ -476,15 +512,33 @@ export const bulkImportClients = async (req, res) => {
       });
     }
 
+    // Check existing phone numbers and email addresses within this salon only.
     const phones = validRows.map((row) => row.phone);
+    const emails = validRows.map((row) => row.email).filter(Boolean);
+
+    const duplicateConditions = [
+      { phone: { $in: phones } },
+    ];
+
+    if (emails.length) {
+      duplicateConditions.push({
+        email: { $in: emails },
+      });
+    }
 
     const existingClients = await Client.find({
       salonId,
-      phone: { $in: phones },
-    }).select("phone");
+      $or: duplicateConditions,
+    }).select("phone email");
 
     const existingPhones = new Set(
       existingClients.map((client) => String(client.phone).trim())
+    );
+
+    const existingEmails = new Set(
+      existingClients
+        .map((client) => String(client.email || "").trim().toLowerCase())
+        .filter(Boolean)
     );
 
     const clientsToCreate = [];
@@ -496,6 +550,16 @@ export const bulkImportClients = async (req, res) => {
           name: row.name,
           phone: row.phone,
           message: "Phone number already exists in this salon",
+        });
+        continue;
+      }
+
+      if (row.email && existingEmails.has(row.email)) {
+        errors.push({
+          row: row.rowNumber,
+          name: row.name,
+          phone: row.phone,
+          message: "Email already exists in this salon",
         });
         continue;
       }
@@ -519,6 +583,13 @@ export const bulkImportClients = async (req, res) => {
         totalVisits: 0,
         totalSpent: 0,
       });
+
+      // Also prevent duplicates among rows processed in this import.
+      existingPhones.add(row.phone);
+
+      if (row.email) {
+        existingEmails.add(row.email);
+      }
     }
 
     let importedClients = [];
@@ -805,7 +876,6 @@ export const getClientHistory = async (req, res) => {
     });
   }
 };
-
 // ========================================
 // UPDATE CLIENT
 // ========================================
@@ -847,6 +917,7 @@ export const updateClient = async (req, res) => {
       });
     }
 
+    // PHONE DUPLICATE CHECK
     if (phone !== undefined) {
       const normalizedPhone = String(phone).trim();
 
@@ -866,13 +937,14 @@ export const updateClient = async (req, res) => {
       if (phoneExists) {
         return res.status(409).json({
           success: false,
-          message: "Another client already uses this phone number",
+          message: "Phone number already exists in this salon",
         });
       }
 
       client.phone = normalizedPhone;
     }
 
+    // NAME UPDATE
     if (name !== undefined) {
       const normalizedName = String(name).trim();
 
@@ -886,10 +958,28 @@ export const updateClient = async (req, res) => {
       client.name = normalizedName;
     }
 
+    // EMAIL DUPLICATE CHECK
     if (email !== undefined) {
-      client.email = email
+      const normalizedEmail = email
         ? String(email).trim().toLowerCase()
         : "";
+
+      if (normalizedEmail) {
+        const emailExists = await Client.findOne({
+          salonId,
+          email: normalizedEmail,
+          _id: { $ne: id },
+        });
+
+        if (emailExists) {
+          return res.status(409).json({
+            success: false,
+            message: "Email already exists in this salon",
+          });
+        }
+      }
+
+      client.email = normalizedEmail;
     }
 
     if (gender !== undefined) {
@@ -920,6 +1010,7 @@ export const updateClient = async (req, res) => {
       client.isActive = Boolean(isActive);
     }
 
+    // PROFILE IMAGE UPDATE
     if (req.file) {
       const uploadedImage = await uploadToCloudinary(req.file.buffer);
 
@@ -944,9 +1035,13 @@ export const updateClient = async (req, res) => {
     console.error("UPDATE CLIENT ERROR:", error);
 
     if (error.code === 11000) {
+      const isEmailDuplicate = error.keyPattern?.email;
+
       return res.status(409).json({
         success: false,
-        message: "Phone number already exists in this salon",
+        message: isEmailDuplicate
+          ? "Email already exists in this salon"
+          : "Phone number already exists in this salon",
       });
     }
 
@@ -957,6 +1052,7 @@ export const updateClient = async (req, res) => {
     });
   }
 };
+
 // ========================================
 // DEACTIVATE CLIENT
 // ========================================

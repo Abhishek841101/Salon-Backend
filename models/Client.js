@@ -135,12 +135,16 @@ const clientSchema = new mongoose.Schema(
 );
 
 // ========================================
-// NORMALIZE PHONE
+// NORMALIZE PHONE AND EMAIL
 // ========================================
 
 clientSchema.pre("save", function () {
   if (this.phone) {
     this.phone = String(this.phone).trim();
+  }
+
+  if (this.email) {
+    this.email = String(this.email).trim().toLowerCase();
   }
 });
 
@@ -157,11 +161,6 @@ clientSchema.index({
 // ========================================
 // MULTI-SALON UNIQUE PHONE
 // ========================================
-//
-// Same phone can exist in different salons.
-// But duplicate phone inside the same salon
-// is not allowed.
-//
 
 clientSchema.index(
   {
@@ -170,6 +169,24 @@ clientSchema.index(
   },
   {
     unique: true,
+  }
+);
+
+// ========================================
+// MULTI-SALON UNIQUE EMAIL
+// Empty email is excluded
+// ========================================
+
+clientSchema.index(
+  {
+    salonId: 1,
+    email: 1,
+  },
+  {
+    unique: true,
+    partialFilterExpression: {
+      email: { $gt: "" },
+    },
   }
 );
 
