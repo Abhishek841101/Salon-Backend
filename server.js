@@ -12,7 +12,7 @@ import billRoutes from "./routes/billRoutes.js";
 import dashboardRoutes from "./routes/dashboardRoutes.js";
 import bookingRoutes from "./routes/bookingRoutes.js";
 import stylistRoutes from "./routes/stylistRoutes.js";
-import attendanceRoutes from "./routes/attendanceRoutes.js";
+// import attendanceRoutes from "./routes/attendanceRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import expenseRoutes from "./routes/expenseRoutes.js";
 import notificationRoutes from "./routes/notificationRoutes.js";
@@ -91,7 +91,7 @@ app.use("/api/bills", billRoutes);
 app.use("/api/bookings", bookingRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/stylists", stylistRoutes);
-app.use("/api/attendance", attendanceRoutes);
+// app.use("/api/attendance", attendanceRoutes);
 app.use(
   "/api/products",
   productRoutes
